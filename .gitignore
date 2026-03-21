@@ -4,3 +4,5 @@ __pycache__/
 *.log
 .DS_Store
 wrangler-*.log
+proxy/GeoLite2-Country.mmdb
+*.mmdb
