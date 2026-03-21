@@ -1,22 +1,9 @@
-# Имя workflow (отображается в GitHub Actions)
 name: Update Proxies
 
-# Триггеры запуска
 on:
-  # Запуск по расписанию (cron)
   schedule:
-    # Каждые 6 часов: 0:00, 6:00, 12:00, 18:00 UTC
     - cron: '0 */6 * * *'
-  
-  # Ручной запуск из интерфейса GitHub
   workflow_dispatch:
-    inputs:
-      force_update:
-        description: 'Принудительное обновление'
-        required: false
-        default: 'true'
-  
-  # Запуск при пуше в ветку main (опционально)
   push:
     branches:
       - main
@@ -24,51 +11,33 @@ on:
       - 'proxy/main.py'
       - 'proxy/test_proxies.py'
 
-# Определяем переменные окружения
 env:
   PYTHON_VERSION: '3.11'
   WORKER_URL: 'https://telegram-proxy-bot.krichencat.workers.dev'
   BOT_TOKEN: '8664454935:AAFPk1ehMIJB1r9MrDRTrb9JDtpHYjg1Vjc'
 
-# Задачи
 jobs:
   update:
-    # На какой ОС запускаем
     runs-on: ubuntu-latest
-    
-    # Таймаут выполнения (на случай зависания)
     timeout-minutes: 30
     
-    # Настройки шагов
     steps:
-      # ============================================================
-      # ШАГ 1: Клонирование репозитория
-      # ============================================================
       - name: 📦 Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 1  # Только последний коммит для скорости
+          fetch-depth: 1
       
-      # ============================================================
-      # ШАГ 2: Установка Python
-      # ============================================================
       - name: 🐍 Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-          cache: 'pip'  # Кэшируем зависимости для скорости
+          cache: 'pip'
       
-      # ============================================================
-      # ШАГ 3: Установка зависимостей
-      # ============================================================
       - name: 📦 Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install requests geoip2 ipaddress httpx
       
-      # ============================================================
-      # ШАГ 4: Проверка структуры проекта
-      # ============================================================
       - name: 🔍 Check project structure
         run: |
           echo "📁 Структура проекта:"
@@ -77,18 +46,15 @@ jobs:
           echo "📁 Папка proxy:"
           ls -la proxy/ || echo "Папка proxy не найдена"
       
-      # ============================================================
-      # ШАГ 5: Запуск сбора прокси
-      # ============================================================
-      - name: 🔍 Run main.py (сбор сырых прокси)
+      - name: 🔍 Run main.py
         run: |
           cd proxy
           echo "🔄 Запуск main.py..."
           python main.py 2>&1 | tee main.log
           echo "✅ main.py завершен"
-        continue-on-error: false  # Останавливаем при ошибке
+        continue-on-error: false
       
-      - name: 📊 Run test_proxies.py (проверка и фильтрация)
+      - name: 📊 Run test_proxies.py
         run: |
           cd proxy
           echo "🔄 Запуск test_proxies.py..."
@@ -96,15 +62,11 @@ jobs:
           echo "✅ test_proxies.py завершен"
         continue-on-error: false
       
-      # ============================================================
-      # ШАГ 6: Парсинг результатов и отправка в Worker
-      # ============================================================
       - name: 📤 Parse and send to Worker
         id: send
         run: |
           cd proxy
           
-          # Проверяем наличие файла с прокси
           if [ ! -f "best_proxies.txt" ]; then
             echo "❌ Файл best_proxies.txt не найден!"
             exit 1
@@ -114,7 +76,6 @@ jobs:
           cat best_proxies.txt
           echo ""
           
-          # Парсим и отправляем через Python
           python << 'EOF'
 import httpx
 import json
@@ -126,7 +87,6 @@ WORKER_URL = os.environ.get('WORKER_URL', 'https://telegram-proxy-bot.krichencat
 print(f"🌐 Worker URL: {WORKER_URL}")
 
 def parse_proxies():
-    """Парсит best_proxies.txt в формат для Worker"""
     proxies = []
     filename = 'best_proxies.txt'
     
@@ -143,12 +103,10 @@ def parse_proxies():
         if line.startswith('tg://proxy'):
             proxy = {'link': line}
             
-            # Извлекаем сервер
             server_match = re.search(r'server=([^&]+)', line)
             if server_match:
                 proxy['server'] = server_match.group(1)
             
-            # Определяем флаг из комментария выше
             if i > 0 and '🇷🇺' in lines[i-1]:
                 proxy['flag'] = '🇷🇺'
                 proxy['type'] = '🇷🇺 RU'
@@ -159,7 +117,6 @@ def parse_proxies():
                 proxy['flag'] = '🌍'
                 proxy['type'] = '🌍 ALL'
             
-            # Извлекаем пинг из комментария
             if i > 0:
                 ping_match = re.search(r'п:(\d+)мс', lines[i-1])
                 if ping_match:
@@ -171,7 +128,6 @@ def parse_proxies():
     return proxies
 
 def send_to_worker(proxies):
-    """Отправляет прокси в Cloudflare Worker"""
     if not proxies:
         print("❌ Нет прокси для отправки")
         return False
@@ -204,7 +160,6 @@ def send_to_worker(proxies):
         print(f"❌ Ошибка отправки: {e}")
         return False
 
-# Основной код
 proxies = parse_proxies()
 
 if proxies:
@@ -220,16 +175,12 @@ else:
     sys.exit(1)
 EOF
       
-      # ============================================================
-      # ШАГ 7: Отправка уведомления в Telegram (опционально)
-      # ============================================================
       - name: 📢 Send notification to Telegram
-        if: always()  # Всегда отправляем уведомление, даже если были ошибки
+        if: always()
         run: |
           cd proxy
           
-          # Определяем статус выполнения
-          if [ ${{ job.status }} == "success" ]; then
+          if [ "${{ job.status }}" == "success" ]; then
             STATUS="✅ Успешно"
             EMOJI="🎉"
           else
@@ -239,14 +190,14 @@ EOF
           
           python << 'EOF'
 import httpx
+import re
 import os
-import sys
 
 BOT_TOKEN = os.environ.get('BOT_TOKEN', '8664454935:AAFPk1ehMIJB1r9MrDRTrb9JDtpHYjg1Vjc')
 WORKER_URL = os.environ.get('WORKER_URL', 'https://telegram-proxy-bot.krichencat.workers.dev')
-CHAT_ID = "305673438"  # Ваш Telegram ID
+CHAT_ID = "305673438"
 
-STATUS = "${{ job.status }}"
+STATUS = os.environ.get('STATUS', 'unknown')
 if STATUS == "success":
     STATUS_TEXT = "✅ Успешно"
     EMOJI = "🎉"
@@ -254,10 +205,8 @@ else:
     STATUS_TEXT = "❌ Ошибка"
     EMOJI = "⚠️"
 
-# Получаем количество прокси из Worker
 try:
     response = httpx.get(WORKER_URL, timeout=10)
-    import re
     match = re.search(r'Прокси в кэше: (\d+)', response.text)
     proxies_count = match.group(1) if match else "неизвестно"
 except:
@@ -276,21 +225,16 @@ message = f"""{EMOJI} <b>Обновление прокси</b>
 try:
     response = httpx.post(
         f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
-        json={
-            "chat_id": CHAT_ID,
-            "text": message,
-            "parse_mode": "HTML"
-        },
+        json={"chat_id": CHAT_ID, "text": message, "parse_mode": "HTML"},
         timeout=30
     )
     print(f"📢 Уведомление отправлено: {response.status_code}")
 except Exception as e:
     print(f"⚠️ Не удалось отправить уведомление: {e}")
 EOF
+        env:
+          STATUS: ${{ job.status }}
       
-      # ============================================================
-      # ШАГ 8: Сохранение логов (опционально)
-      # ============================================================
       - name: 📝 Save logs
         if: always()
         uses: actions/upload-artifact@v4
@@ -300,4 +244,4 @@ EOF
             proxy/main.log
             proxy/test.log
             proxy/best_proxies.txt
-          retention-days: 7  # Хранить логи 7 дней
+          retention-days: 7
