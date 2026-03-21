@@ -76,7 +76,7 @@ jobs:
           cat best_proxies.txt
           echo ""
           
-          python << 'EOF'
+          python
 import httpx
 import json
 import re
