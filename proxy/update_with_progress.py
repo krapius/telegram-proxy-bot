@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
-Скрипт для обновления прокси с отображением прогресса в Telegram
-Запускается в GitHub Actions
+Скрипт для обновления прокси с отображением прогресса в одном сообщении
 """
 
 import subprocess
@@ -10,34 +9,61 @@ import os
 import httpx
 import time
 import re
+import json
 
-# Конфигурация
 BOT_TOKEN = os.environ.get('BOT_TOKEN', '8664454935:AAFPk1ehMIJB1r9MrDRTrb9JDtpHYjg1Vjc')
 WORKER_URL = os.environ.get('WORKER_URL', 'https://telegram-proxy-bot.krichencat.workers.dev')
 CHAT_ID = "305673438"
 
-def send_message(text, parse_mode='HTML'):
-    """Отправляет сообщение в Telegram"""
-    try:
+# Глобальная переменная для хранения ID сообщения
+message_id = None
+
+def send_or_edit(text, parse_mode='HTML', reply_markup=None):
+    """Отправляет новое сообщение или редактирует существующее"""
+    global message_id
+    
+    if message_id is None:
+        # Отправляем новое сообщение
         response = httpx.post(
             f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
-            json={"chat_id": CHAT_ID, "text": text, "parse_mode": parse_mode},
+            json={
+                "chat_id": CHAT_ID, 
+                "text": text, 
+                "parse_mode": parse_mode,
+                "reply_markup": reply_markup
+            },
             timeout=30
         )
-        return response.status_code == 200
-    except Exception as e:
-        print(f"⚠️ Не удалось отправить сообщение: {e}")
-        return False
+        if response.status_code == 200:
+            message_id = response.json()['result']['message_id']
+        return
+    else:
+        # Редактируем существующее
+        try:
+            httpx.post(
+                f"https://api.telegram.org/bot{BOT_TOKEN}/editMessageText",
+                json={
+                    "chat_id": CHAT_ID,
+                    "message_id": message_id,
+                    "text": text,
+                    "parse_mode": parse_mode,
+                    "reply_markup": reply_markup
+                },
+                timeout=30
+            )
+        except:
+            # Если сообщение не найдено, отправляем новое
+            message_id = None
+            send_or_edit(text, parse_mode, reply_markup)
 
 def progress_bar(percent, width=10):
-    """Создаёт прогресс-бар"""
     percent = min(100, max(0, percent))
     filled = int(width * percent / 100)
     bar = '█' * filled + '░' * (width - filled)
     return f"{bar} {percent:3.0f}%"
 
-def update_progress(stage_num, stage_name, current, total, start_time):
-    """Обновляет прогресс с этапами"""
+def update_progress(stage_num, stage_name, current, total, start_time, total_proxies=0):
+    """Обновляет прогресс в одном сообщении"""
     stages = [
         (1, "1. 🧘 Медитирую"),
         (2, "2. 📦 Сбор прокси"),
@@ -47,7 +73,6 @@ def update_progress(stage_num, stage_name, current, total, start_time):
         (6, "6. ✨ Подготовка результатов")
     ]
     
-    # Расчет прогресса
     stage_percent = (current / total) * 100 if total > 0 else 0
     total_stages = 6
     base_progress = ((stage_num - 1) / total_stages) * 100
@@ -55,7 +80,6 @@ def update_progress(stage_num, stage_name, current, total, start_time):
     total_progress = base_progress + (stage_contribution * (stage_percent / 100))
     total_progress = min(100, max(0, total_progress))
     
-    # Время
     elapsed = time.time() - start_time
     elapsed_min = int(elapsed // 60)
     elapsed_sec = int(elapsed % 60)
@@ -64,7 +88,6 @@ def update_progress(stage_num, stage_name, current, total, start_time):
     else:
         time_display = f"{elapsed_sec}с"
     
-    # Формируем текст
     text = f"<b>🔄 Обновление прокси</b>\n\n"
     text += f"<code>{progress_bar(total_progress, 10)}</code>"
     text += f"   —   <i>{time_display}</i>\n\n"
@@ -86,36 +109,73 @@ def update_progress(stage_num, stage_name, current, total, start_time):
         text += f"{name:<28} {status:>12}\n"
     
     text += f"</pre>\n"
-    text += f"\n📌 <i>{stage_name}</i>"
     
-    send_message(text)
+    if total_proxies > 0:
+        text += f"\n🟢 <b>Найдено:</b> {total_proxies} прокси"
+    
+    if stage_name:
+        text += f"\n\n📌 <i>{stage_name}</i>"
+    
+    send_or_edit(text)
 
-def run_command(cmd, cwd=None):
-    """Запускает команду и возвращает вывод"""
-    result = subprocess.run(
-        cmd,
-        cwd=cwd,
-        shell=True,
-        capture_output=True,
-        text=True
-    )
-    return result.stdout, result.stderr, result.returncode
+def create_proxy_buttons(proxies):
+    """Создаёт кнопки для прокси"""
+    keyboard = []
+    for i, p in enumerate(proxies[:6], 1):
+        flag = p.get('flag', '🇪🇺')
+        
+        # Кнопка с прокси
+        main_button = {
+            "text": f"{flag} Прокси #{i}",
+            "url": p['link']
+        }
+        
+        # Кнопка поделиться
+        share_url = f"https://t.me/share/url?url={p['link']}"
+        share_button = {
+            "text": "📤",
+            "url": share_url
+        }
+        
+        keyboard.append([main_button, share_button])
+    
+    # Кнопка обновления
+    keyboard.append([{
+        "text": "🔄 Обновить список прокси",
+        "callback_data": "refresh"
+    }])
+    
+    return {"inline_keyboard": keyboard}
+
+def send_final_result(proxies):
+    """Отправляет финальный результат с кнопками"""
+    now = time.strftime("%d.%m %H:%M")
+    text = f"<b>🔥 Лучшие прокси SAMOLET на {now}</b>"
+    
+    if not proxies:
+        text += "\n❌ Нет прокси"
+        keyboard = {"inline_keyboard": [[{"text": "🔄 Обновить список", "callback_data": "refresh"}]]}
+    else:
+        keyboard = create_proxy_buttons(proxies)
+    
+    send_or_edit(text, reply_markup=keyboard)
 
 def main():
+    global message_id
+    message_id = None
     start_time = time.time()
     
-    # Начальное сообщение
-    send_message("🔄 <b>Запуск обновления прокси...</b>\n\n⚠️ Процесс займёт 1-2 минуты")
+    # Отправляем начальное сообщение
+    send_or_edit("🔄 <b>Запуск обновления прокси...</b>")
     
     # Этап 1: Подготовка
     update_progress(1, "Подготовка...", 1, 1, start_time)
     time.sleep(0.5)
     update_progress(1, "Готов к работе", 1, 1, start_time)
     
-    # Этап 2: main.py (сбор прокси)
+    # Этап 2: main.py
     update_progress(2, "Запуск сбора прокси...", 0, 1, start_time)
     
-    # Запускаем main.py и читаем вывод для прогресса
     process = subprocess.Popen(
         ['python3', 'main.py'],
         cwd=os.path.dirname(__file__),
@@ -140,19 +200,19 @@ def main():
                 percent = int(checked * 100 / total) if total > 0 else 0
                 if percent >= last_percent + 10 or percent == 100:
                     last_percent = percent
-                    update_progress(2, f"Сбор прокси... {percent}%", percent, 100, start_time)
+                    update_progress(2, f"Сбор прокси... {percent}%", percent, 100, start_time, total_proxies)
             
             match = re.search(r'RU=(\d+)\s+EU=(\d+)', line)
             if match:
                 ru = int(match.group(1))
                 eu = int(match.group(2))
                 total_proxies = ru + eu
-                update_progress(2, f"Найдено {total_proxies} прокси", 100, 100, start_time)
+                update_progress(2, f"Найдено {total_proxies} прокси", 100, 100, start_time, total_proxies)
     
     process.wait(timeout=10)
     
-    # Этап 3: test_proxies.py (проверка)
-    update_progress(3, "TCP-тестирование...", 0, 100, start_time)
+    # Этап 3: test_proxies.py
+    update_progress(3, "TCP-тестирование...", 0, 100, start_time, total_proxies)
     
     process = subprocess.Popen(
         ['python3', 'test_proxies.py'],
@@ -176,7 +236,7 @@ def main():
             percent = int(tested * 100 / total_to_test) if total_to_test > 0 else 0
             if percent >= last_percent + 10 or percent == 100:
                 last_percent = percent
-                update_progress(3, f"TCP-тестирование... {percent}% ({tested}/{total_to_test})", percent, 100, start_time)
+                update_progress(3, f"TCP-тестирование... {percent}% ({tested}/{total_to_test})", percent, 100, start_time, total_proxies)
     
     process.wait(timeout=10)
     
@@ -184,18 +244,9 @@ def main():
     with open('best_proxies.txt', 'r') as f:
         content = f.read()
     
-    # Считаем прокси
-    proxies = [line for line in content.split('\n') if line.startswith('tg://proxy')]
-    total_proxies_found = len(proxies)
-    
-    update_progress(3, f"Найдено {total_proxies_found} стабильных", 100, 100, start_time)
-    
-    # Этап 4: Анализ стабильности (имитация)
-    update_progress(4, "Анализ стабильности...", 0, 100, start_time)
-    
-    # Парсим прокси из файла
-    proxies_list = []
+    # Парсим прокси
     lines = content.split('\n')
+    proxies_list = []
     for i, line in enumerate(lines):
         if line.startswith('tg://proxy'):
             proxy = {'link': line}
@@ -207,21 +258,27 @@ def main():
                 proxy['flag'] = '🌍'
             proxies_list.append(proxy)
     
-    # Симулируем анализ
-    for i in range(1, min(len(proxies_list), 100) + 1):
-        if i % max(1, len(proxies_list) // 10) == 0:
-            percent = int(i * 100 / len(proxies_list)) if len(proxies_list) > 0 else 0
-            update_progress(4, f"Анализ прокси {i}/{len(proxies_list)}", percent, 100, start_time)
+    total_proxies_found = len(proxies_list)
+    
+    update_progress(3, f"Найдено {total_proxies_found} стабильных", 100, 100, start_time, total_proxies_found)
+    
+    # Этап 4: Анализ (имитация)
+    update_progress(4, "Анализ стабильности...", 0, 100, start_time, total_proxies_found)
+    
+    for i in range(1, min(total_proxies_found, 100) + 1):
+        if i % max(1, total_proxies_found // 10) == 0:
+            percent = int(i * 100 / total_proxies_found) if total_proxies_found > 0 else 0
+            update_progress(4, f"Анализ прокси {i}/{total_proxies_found}", percent, 100, start_time, total_proxies_found)
         time.sleep(0.05)
     
-    update_progress(4, f"Отобрано {total_proxies_found} лучших", 100, 100, start_time)
+    update_progress(4, f"Отобрано {total_proxies_found} лучших", 100, 100, start_time, total_proxies_found)
     
-    # Этап 5: Проверка соединения
-    update_progress(5, "Проверка соединения...", 100, 100, start_time)
+    # Этап 5: Проверка
+    update_progress(5, "Проверка соединения...", 100, 100, start_time, total_proxies_found)
     time.sleep(0.5)
     
-    # Этап 6: Подготовка результатов и отправка в Worker
-    update_progress(6, "Формирую список...", 100, 100, start_time)
+    # Этап 6: Подготовка и отправка
+    update_progress(6, "Формирую список...", 100, 100, start_time, total_proxies_found)
     
     # Отправляем в Worker
     try:
@@ -230,27 +287,13 @@ def main():
             json={"proxies": proxies_list},
             timeout=30
         )
-        if response.status_code == 200:
-            data = response.json()
-            if data.get('ok'):
-                print(f"✅ Отправлено {data.get('count', 0)} прокси в Worker")
     except Exception as e:
         print(f"❌ Ошибка отправки: {e}")
     
     time.sleep(0.5)
-    update_progress(6, "Готово!", 100, 100, start_time)
     
-    # Финальное сообщение
-    total_time = time.time() - start_time
-    total_min = int(total_time // 60)
-    total_sec = int(total_time % 60)
-    
-    final_text = f"✅ <b>Обновление завершено!</b>\n\n"
-    final_text += f"📦 Найдено: {total_proxies_found} прокси\n"
-    final_text += f"⏱️ Время: {total_min}м {total_sec:02d}с\n\n"
-    final_text += f"Отправьте /start для просмотра списка"
-    
-    send_message(final_text)
+    # Финальное сообщение со списком прокси
+    send_final_result(proxies_list)
 
 if __name__ == "__main__":
     main()
