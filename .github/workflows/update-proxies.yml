@@ -221,7 +221,6 @@ message = f"""{EMOJI} <b>Обновление прокси</b>
 /start - показать список
 /refresh - обновить вручную
 """
-
 try:
     response = httpx.post(
         f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
