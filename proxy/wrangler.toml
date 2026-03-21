@@ -1,0 +1,7 @@
+name = "telegram-proxy-bot"
+main = "worker.js"
+compatibility_date = "2024-03-21"
+
+[[kv_namespaces]]
+binding = "PROXY_KV"
+id = "2fe4764cfc1040bd8ffa5f6055d2ced1"

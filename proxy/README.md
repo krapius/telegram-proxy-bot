@@ -1,0 +1,76 @@
+# 🛡️ Telegram Proxy Collector: Anti-Censorship Edition
+
+![Python](https://img.shields.io/badge/Python-3.9%2B-blue?style=for-the-badge&logo=python)
+![Status](https://img.shields.io/badge/Auto_Update-Every_4_Hours-success?style=for-the-badge&logo=github-actions)
+![License](https://img.shields.io/badge/License-MIT-orange?style=for-the-badge)
+
+**Умный комбайн для сбора MTProto прокси.**
+В отличие от обычных парсеров, этот скрипт анализирует секрет (Secret) каждого прокси и определяет, под какой сайт он маскируется. Это критически важно для работы в условиях жестких блокировок (DPI).
+
+---
+
+## 🔥 Актуальные списки (Обновляются автоматически)
+
+Прямые ссылки для вставки в Telegram или свои программы:
+
+| 🇷🇺 **RU Сегмент** (Top Tier) | 🇪🇺 **EU / Global** | 🌍 **Все прокси** |
+| :--- | :--- | :--- |
+| **[proxy_ru.txt](https://raw.githubusercontent.com/kort0881/telegram-proxy-collector/main/proxy_ru.txt)** | **[proxy_eu.txt](https://raw.githubusercontent.com/kort0881/telegram-proxy-collector/main/proxy_eu.txt)** | **[proxy_all.txt](https://raw.githubusercontent.com/kort0881/telegram-proxy-collector/main/proxy_all.txt)** |
+| *Маскировка под Yandex, VK, Mail.ru, Gosuslugi* | *Маскировка под Google, Amazon, Microsoft* | *Полный микс рабочих серверов* |
+| ✅ **Лучшие для РФ и Ирана** | ✅ **Высокая скорость** | ✅ **Максимальное количество** |
+
+---
+
+## 🚀 Как это работает?
+
+Скрипт запускается каждые 4 часа через GitHub Actions и выполняет 4 этапа:
+
+1.  **Сбор (Harvesting):**
+    *   Скачивает "сырые" прокси из 10+ проверенных источников (GitHub, JSON-api).
+    *   Использует агрессивный Regex-парсинг для извлечения ссылок из любого мусора.
+
+2.  **Декодирование (Deep Analysis):**
+    *   Расшифровывает `Fake-TLS` секрет (начинается на `ee...`).
+    *   Извлекает домен, под который идет маскировка трафика.
+
+3.  **Фильтрация (Smart Filter):**
+    *   ⛔ **Blacklist:** Удаляет прокси, маскирующиеся под заблокированные ресурсы (Instagram, Facebook, BBC), так как они бесполезны в РФ.
+    *   ✅ **Whitelist:** Присваивает тег `RU`, если маскировка идет под: `yandex.ru`, `vk.com`, `mail.ru`, `sber.ru`, `gosuslugi.ru` и др.
+
+4.  **Проверка (Checking):**
+    *   Проверяет реальный пинг и доступность порта (Timeout: 2s).
+    *   Сортирует результаты по скорости.
+
+---
+
+## 🔗 Мои Проекты
+
+| Проект | Описание | Ссылка |
+| :--- | :--- | :--- |
+| **VPN KEY VLESS** | Основной канал с конфигами и новостями | [Telegram](https://t.me/vlesstrojan) |
+| **KiberSos New** | Резервный канал связи | [Telegram](https://t.me/kibersosnew) |
+| **VlessBots** | Бот для выдачи ключей | [Bot](https://t.me/vlessbots_bot) |
+| **Internet Access** | Сайт проекта | [Website](https://kort0881.github.io/internet-access-site/) |
+| **VPN Key Repo** | Репозиторий скриптов VLESS | [GitHub](https://github.com/kort0881/vpn-key-vless) |
+
+---
+
+## 🛠️ Локальный запуск (для разработчиков)
+
+Если хотите запустить сборщик на своем ПК:
+
+```bash
+# 1. Клонировать репозиторий
+git clone https://github.com/kort0881/telegram-proxy-collector.git
+
+# 2. Установить зависимости
+pip install requests
+
+# 3. Запустить
+python main.py
+После завершения скрипт создаст файлы proxy_ru.txt, proxy_eu.txt и proxy_all.txt в папке проекта.
+
+Developed by Kort0881
+
+text
+undefined

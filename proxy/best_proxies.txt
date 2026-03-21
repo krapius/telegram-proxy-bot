@@ -1,0 +1,22 @@
+# Лучшие прокси от 2026-03-21 21:44:14
+# Всего найдено: 39 (RU: 1, EU: 38)
+# В выдаче: 6 прокси
+
+# 1. 🇷🇺 RU 🏆 proxy.ciaowner.lol — п:74мс дж:8мс пот:0%
+tg://proxy?server=proxy.ciaowner.lol&port=443&secret=ee1459dda62dc99782f8741f1ab0deb4f2706574726f766963682e7275
+
+# 2. 🇪🇺 EU 🏆 37.139.42.140 — п:28мс дж:1мс пот:0%
+tg://proxy?server=37.139.42.140&port=443&secret=f5199e949c0f23bc887581218ad8c1e6
+
+# 3. 🇪🇺 EU 🏆 37.139.43.80 — п:26мс дж:1мс пот:0%
+tg://proxy?server=37.139.43.80&port=443&secret=f5199e949c0f23bc887581218ad8c1e6
+
+# 4. 🇪🇺 EU 🏆 37.139.42.151 — п:26мс дж:2мс пот:0%
+tg://proxy?server=37.139.42.151&port=443&secret=f5199e949c0f23bc887581218ad8c1e6
+
+# 5. 🇪🇺 EU 🏆 138.124.241.216 — п:52мс дж:1мс пот:0%
+tg://proxy?server=138.124.241.216&port=443&secret=7r973_AfkbaeTLpVDszDxth3d3cuZ29vZ2xlLmNvbQ
+
+# 6. 🇪🇺 EU 🏆 www.merco-karco.website — п:40мс дж:1мс пот:0%
+tg://proxy?server=www.merco-karco.website&port=443&secret=ee1603010200010001fc030386e24c3add626973636F7474692E79656B74616E65742E636F6D
+
