@@ -9,13 +9,11 @@ import os
 import httpx
 import time
 import re
-import json
 
 BOT_TOKEN = os.environ.get('BOT_TOKEN', '8664454935:AAFPk1ehMIJB1r9MrDRTrb9JDtpHYjg1Vjc')
 WORKER_URL = os.environ.get('WORKER_URL', 'https://telegram-proxy-bot.krichencat.workers.dev')
 CHAT_ID = "305673438"
 
-# Глобальная переменная для хранения ID сообщения
 message_id = None
 
 def send_or_edit(text, parse_mode='HTML', reply_markup=None):
@@ -23,7 +21,6 @@ def send_or_edit(text, parse_mode='HTML', reply_markup=None):
     global message_id
     
     if message_id is None:
-        # Отправляем новое сообщение
         response = httpx.post(
             f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
             json={
@@ -38,7 +35,6 @@ def send_or_edit(text, parse_mode='HTML', reply_markup=None):
             message_id = response.json()['result']['message_id']
         return
     else:
-        # Редактируем существующее
         try:
             httpx.post(
                 f"https://api.telegram.org/bot{BOT_TOKEN}/editMessageText",
@@ -52,7 +48,6 @@ def send_or_edit(text, parse_mode='HTML', reply_markup=None):
                 timeout=30
             )
         except:
-            # Если сообщение не найдено, отправляем новое
             message_id = None
             send_or_edit(text, parse_mode, reply_markup)
 
@@ -63,7 +58,6 @@ def progress_bar(percent, width=10):
     return f"{bar} {percent:3.0f}%"
 
 def update_progress(stage_num, stage_name, current, total, start_time, total_proxies=0):
-    """Обновляет прогресс в одном сообщении"""
     stages = [
         (1, "1. 🧘 Медитирую"),
         (2, "2. 📦 Сбор прокси"),
@@ -119,18 +113,18 @@ def update_progress(stage_num, stage_name, current, total, start_time, total_pro
     send_or_edit(text)
 
 def create_proxy_buttons(proxies):
-    """Создаёт кнопки для прокси"""
+    """Создаёт кнопки для прокси в формате Telegram"""
     keyboard = []
     for i, p in enumerate(proxies[:6], 1):
         flag = p.get('flag', '🇪🇺')
         
-        # Кнопка с прокси
+        # Кнопка с прокси (левая)
         main_button = {
             "text": f"{flag} Прокси #{i}",
             "url": p['link']
         }
         
-        # Кнопка поделиться
+        # Кнопка поделиться (правая)
         share_url = f"https://t.me/share/url?url={p['link']}"
         share_button = {
             "text": "📤",
@@ -139,7 +133,7 @@ def create_proxy_buttons(proxies):
         
         keyboard.append([main_button, share_button])
     
-    # Кнопка обновления
+    # Кнопка обновления внизу
     keyboard.append([{
         "text": "🔄 Обновить список прокси",
         "callback_data": "refresh"
@@ -159,6 +153,28 @@ def send_final_result(proxies):
         keyboard = create_proxy_buttons(proxies)
     
     send_or_edit(text, reply_markup=keyboard)
+
+def parse_proxies_from_file():
+    """Парсит best_proxies.txt в список прокси"""
+    proxies = []
+    try:
+        with open('best_proxies.txt', 'r', encoding='utf-8') as f:
+            lines = f.read().split('\n')
+        
+        for i, line in enumerate(lines):
+            if line.startswith('tg://proxy'):
+                proxy = {'link': line}
+                if i > 0 and '🇷🇺' in lines[i-1]:
+                    proxy['flag'] = '🇷🇺'
+                elif i > 0 and '🇪🇺' in lines[i-1]:
+                    proxy['flag'] = '🇪🇺'
+                else:
+                    proxy['flag'] = '🌍'
+                proxies.append(proxy)
+    except Exception as e:
+        print(f"Ошибка парсинга: {e}")
+    
+    return proxies
 
 def main():
     global message_id
@@ -240,25 +256,9 @@ def main():
     
     process.wait(timeout=10)
     
-    # Читаем результат
-    with open('best_proxies.txt', 'r') as f:
-        content = f.read()
-    
-    # Парсим прокси
-    lines = content.split('\n')
-    proxies_list = []
-    for i, line in enumerate(lines):
-        if line.startswith('tg://proxy'):
-            proxy = {'link': line}
-            if i > 0 and '🇷🇺' in lines[i-1]:
-                proxy['flag'] = '🇷🇺'
-            elif i > 0 and '🇪🇺' in lines[i-1]:
-                proxy['flag'] = '🇪🇺'
-            else:
-                proxy['flag'] = '🌍'
-            proxies_list.append(proxy)
-    
-    total_proxies_found = len(proxies_list)
+    # Парсим результат
+    proxies = parse_proxies_from_file()
+    total_proxies_found = len(proxies)
     
     update_progress(3, f"Найдено {total_proxies_found} стабильных", 100, 100, start_time, total_proxies_found)
     
@@ -284,16 +284,18 @@ def main():
     try:
         response = httpx.post(
             f"{WORKER_URL}/update",
-            json={"proxies": proxies_list},
+            json={"proxies": proxies},
             timeout=30
         )
+        if response.status_code == 200:
+            print(f"✅ Отправлено {len(proxies)} прокси в Worker")
     except Exception as e:
         print(f"❌ Ошибка отправки: {e}")
     
     time.sleep(0.5)
     
-    # Финальное сообщение со списком прокси
-    send_final_result(proxies_list)
+    # Финальное сообщение с кнопками
+    send_final_result(proxies)
 
 if __name__ == "__main__":
     main()
