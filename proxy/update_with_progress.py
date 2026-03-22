@@ -12,7 +12,12 @@ import re
 
 BOT_TOKEN = os.environ.get('BOT_TOKEN', '8664454935:AAFPk1ehMIJB1r9MrDRTrb9JDtpHYjg1Vjc')
 WORKER_URL = os.environ.get('WORKER_URL', 'https://telegram-proxy-bot.krichencat.workers.dev')
-CHAT_ID = "305673438"
+
+# Получаем chat_id из аргументов командной строки
+# Если аргумент не передан, используем личный чат
+CHAT_ID = sys.argv[1] if len(sys.argv) > 1 else "305673438"
+
+print(f"📨 Результат будет отправлен в чат: {CHAT_ID}")
 
 def send_message(text, parse_mode='HTML', reply_markup=None):
     """Отправляет новое сообщение"""
@@ -144,7 +149,7 @@ def create_proxy_buttons(proxies):
     return {"inline_keyboard": keyboard}
 
 def send_final_result(proxies):
-    """Отправляет финальный результат как НОВОЕ сообщение"""
+    """Отправляет финальный результат в указанный чат"""
     now = time.strftime("%d.%m %H:%M")
     text = f"<b>🔥 Лучшие прокси SAMOLET на {now}</b>"
     
@@ -154,13 +159,8 @@ def send_final_result(proxies):
     else:
         keyboard = create_proxy_buttons(proxies)
     
-    # Отправляем в личный чат (ваш ID)
+    # Отправляем только в тот чат, откуда пришла команда
     send_message(text, reply_markup=keyboard)
-    
-    # Отправляем в канал
-    CHANNEL_ID = -1003605280638
-    if CHANNEL_ID:
-        send_message(CHANNEL_ID, text, reply_markup=keyboard)
 
 def parse_proxies_from_file():
     """Парсит best_proxies.txt в список прокси, фильтруя невалидные"""
@@ -333,7 +333,7 @@ def main():
     # Удаляем сообщение с прогрессом
     delete_message(progress_message_id)
     
-    # Отправляем финальный результат как НОВОЕ сообщение
+    # Отправляем финальный результат
     send_final_result(proxies)
     print("🎉 Обновление завершено!")
 
