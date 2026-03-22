@@ -154,7 +154,13 @@ def send_final_result(proxies):
     else:
         keyboard = create_proxy_buttons(proxies)
     
+    # Отправляем в личный чат (ваш ID)
     send_message(text, reply_markup=keyboard)
+    
+    # Отправляем в канал
+    CHANNEL_ID = -1003605280638
+    if CHANNEL_ID:
+        send_message(CHANNEL_ID, text, reply_markup=keyboard)
 
 def parse_proxies_from_file():
     """Парсит best_proxies.txt в список прокси, фильтруя невалидные"""
@@ -304,7 +310,7 @@ def main():
     
     # Этап 5: Проверка
     update_progress(progress_message_id, 5, "Проверка соединения...", 100, 100, start_time, total_proxies_found)
-    time.sleep(0.5)
+    time.sleep(1)
     
     # Этап 6: Подготовка и отправка
     update_progress(progress_message_id, 6, "Формирую список...", 100, 100, start_time, total_proxies_found)
