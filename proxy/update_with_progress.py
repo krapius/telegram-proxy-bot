@@ -157,6 +157,7 @@ def send_final_result(proxies):
     send_message(text, reply_markup=keyboard)
 
 def parse_proxies_from_file():
+    """Парсит best_proxies.txt в список прокси, фильтруя невалидные"""
     proxies = []
     try:
         with open('best_proxies.txt', 'r', encoding='utf-8') as f:
@@ -164,6 +165,15 @@ def parse_proxies_from_file():
         
         for i, line in enumerate(lines):
             if line.startswith('tg://proxy'):
+                # Проверяем, что сервер не содержит пробелов и не заканчивается точкой
+                server_match = re.search(r'server=([^&]+)', line)
+                if server_match:
+                    server = server_match.group(1)
+                    # Пропускаем ссылки с пробелами или точкой в конце
+                    if ' ' in server or server.endswith('.'):
+                        print(f"⚠️ Пропускаем невалидную ссылку: {line[:80]}...")
+                        continue
+                
                 proxy = {'link': line}
                 if i > 0 and '🇷🇺' in lines[i-1]:
                     proxy['flag'] = '🇷🇺'
