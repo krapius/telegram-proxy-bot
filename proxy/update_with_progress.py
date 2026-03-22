@@ -35,6 +35,21 @@ def send_message(text, parse_mode='HTML', reply_markup=None):
         print(f"❌ Ошибка отправки: {response.status_code}")
         return None
 
+def delete_message(message_id):
+    """Удаляет сообщение"""
+    try:
+        httpx.post(
+            f"https://api.telegram.org/bot{BOT_TOKEN}/deleteMessage",
+            json={
+                "chat_id": CHAT_ID,
+                "message_id": message_id
+            },
+            timeout=30
+        )
+        print(f"🗑️ Сообщение {message_id} удалено")
+    except Exception as e:
+        print(f"⚠️ Ошибка удаления: {e}")
+
 def edit_message(message_id, text, parse_mode='HTML', reply_markup=None):
     """Редактирует существующее сообщение"""
     data = {
@@ -54,21 +69,6 @@ def edit_message(message_id, text, parse_mode='HTML', reply_markup=None):
         )
     except Exception as e:
         print(f"⚠️ Ошибка редактирования: {e}")
-
-def delete_message(message_id):
-    """Удаляет сообщение"""
-    try:
-        httpx.post(
-            f"https://api.telegram.org/bot{BOT_TOKEN}/deleteMessage",
-            json={
-                "chat_id": CHAT_ID,
-                "message_id": message_id
-            },
-            timeout=30
-        )
-        print(f"🗑️ Сообщение {message_id} удалено")
-    except Exception as e:
-        print(f"⚠️ Ошибка удаления: {e}")
 
 def progress_bar(percent, width=10):
     percent = min(100, max(0, percent))
@@ -183,11 +183,18 @@ def main():
     
     print("🔄 Запуск обновления прокси...")
     
-    # Отправляем сообщение с прогрессом (будет удалено в конце)
+    # Отправляем начальное сообщение (будет удалено)
+    start_message_id = send_message("🔄 <b>Обновление прокси начато!</b>\n\nЭто займёт 1-2 минуты...\nРезультат появится здесь автоматически.")
+    
+    # Отправляем сообщение с прогрессом
     progress_message_id = send_message("🔄 <b>Запуск обновления прокси...</b>")
     if not progress_message_id:
         print("❌ Не удалось отправить начальное сообщение")
         return
+    
+    # Удаляем стартовое сообщение (оно больше не нужно)
+    if start_message_id:
+        delete_message(start_message_id)
     
     # Этап 1: Подготовка
     update_progress(progress_message_id, 1, "Подготовка...", 1, 1, start_time)
