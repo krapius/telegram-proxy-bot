@@ -4,12 +4,6 @@ on:
   schedule:
     - cron: '0 */6 * * *'
   workflow_dispatch:
-  push:
-    branches:
-      - main
-    paths:
-      - 'proxy/main.py'
-      - 'proxy/test_proxies.py'
 
 env:
   PYTHON_VERSION: '3.11'
@@ -24,6 +18,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
       
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -35,25 +31,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install requests geoip2 ipaddress httpx
       
-      - name: Run main.py
+      - name: Run update with progress
         run: |
           cd proxy
-          python main.py
-      
-      - name: Run test_proxies.py
-        run: |
-          cd proxy
-          python test_proxies.py
-      
-      - name: Send to Worker
-        run: |
-          cd proxy
-          python send_to_worker.py
-      
-      - name: Send notification
-        if: always()
-        run: |
-          cd proxy
-          python send_notification.py
-        env:
-          STATUS: ${{ job.status }}
+          python update_with_progress.py
