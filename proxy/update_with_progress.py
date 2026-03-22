@@ -105,8 +105,8 @@ def update_progress(message_id, stage_num, stage_name, current, total, start_tim
     text += f"<code>{progress_bar(total_progress, 10)}</code>"
     text += f"   —   <i>{time_display}</i>\n\n"
     text += f"<pre>"
-    text += f"{'Этап':<28} {'Статус':<12}\n"
-    text += f"{'─'*41}\n"
+    text += f"{'Этап':<24} {'Статус':<16}\n"
+    text += f"{'─'*42}\n"
     
     for num, name in stages:
         if num < stage_num:
@@ -119,7 +119,7 @@ def update_progress(message_id, stage_num, stage_name, current, total, start_tim
                 status = "⏳"
         else:
             status = "⋯"
-        text += f"{name:<28} {status:>12}\n"
+        text += f"{name:<24} {status:>16}\n"
     
     text += f"</pre>\n"
     
@@ -240,7 +240,7 @@ def main():
                 checked = int(match.group(1))
                 total = int(match.group(2))
                 percent = int(checked * 100 / total) if total > 0 else 0
-                if percent >= last_percent + 10 or percent == 100:
+                if percent >= last_percent + 2 or percent == 100:
                     last_percent = percent
                     update_progress(progress_message_id, 2, f"Сбор прокси... {percent}%", percent, 100, start_time, total_proxies)
             
