@@ -4,6 +4,12 @@ on:
   schedule:
     - cron: '0 */6 * * *'
   workflow_dispatch:
+    inputs:
+      chat_id:
+        description: 'Chat ID'
+        required: false
+        default: '305673438'
+        type: string
 
 env:
   PYTHON_VERSION: '3.11'
@@ -34,4 +40,4 @@ jobs:
       - name: Run update with progress
         run: |
           cd proxy
-          python update_with_progress.py
+          python update_with_progress.py ${{ github.event.inputs.chat_id }}
