@@ -15,7 +15,7 @@ WORKER_URL = os.environ.get('WORKER_URL', 'https://telegram-proxy-bot.krichencat
 CHAT_ID = "305673438"
 
 def send_message(text, parse_mode='HTML', reply_markup=None):
-    """Отправляет новое сообщение (всегда новое)"""
+    """Отправляет новое сообщение"""
     data = {
         "chat_id": CHAT_ID,
         "text": text,
@@ -24,20 +24,15 @@ def send_message(text, parse_mode='HTML', reply_markup=None):
     if reply_markup:
         data["reply_markup"] = reply_markup
     
-    print("📤 Отправка нового сообщения...")
     response = httpx.post(
         f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
         json=data,
         timeout=30
     )
-    print(f"📡 Статус ответа: {response.status_code}")
     if response.status_code == 200:
-        message_id = response.json()['result']['message_id']
-        print(f"✅ Сообщение отправлено, ID: {message_id}")
-        return message_id
+        return response.json()['result']['message_id']
     else:
         print(f"❌ Ошибка отправки: {response.status_code}")
-        print(f"❌ Подробнее: {response.text}")
         return None
 
 def edit_message(message_id, text, parse_mode='HTML', reply_markup=None):
@@ -52,22 +47,28 @@ def edit_message(message_id, text, parse_mode='HTML', reply_markup=None):
         data["reply_markup"] = reply_markup
     
     try:
-        response = httpx.post(
+        httpx.post(
             f"https://api.telegram.org/bot{BOT_TOKEN}/editMessageText",
             json=data,
             timeout=30
         )
-        print(f"📡 Статус редактирования: {response.status_code}")
-        if response.status_code == 200:
-            print("✅ Сообщение отредактировано")
-            return True
-        else:
-            print(f"❌ Ошибка редактирования: {response.status_code}")
-            print(f"❌ Тело: {response.text}")
-            return False
     except Exception as e:
         print(f"⚠️ Ошибка редактирования: {e}")
-        return False
+
+def delete_message(message_id):
+    """Удаляет сообщение"""
+    try:
+        httpx.post(
+            f"https://api.telegram.org/bot{BOT_TOKEN}/deleteMessage",
+            json={
+                "chat_id": CHAT_ID,
+                "message_id": message_id
+            },
+            timeout=30
+        )
+        print(f"🗑️ Сообщение {message_id} удалено")
+    except Exception as e:
+        print(f"⚠️ Ошибка удаления: {e}")
 
 def progress_bar(percent, width=10):
     percent = min(100, max(0, percent))
@@ -144,7 +145,6 @@ def create_proxy_buttons(proxies):
 
 def send_final_result(proxies):
     """Отправляет финальный результат как НОВОЕ сообщение"""
-    print("📢 Отправка финального результата в Telegram...")
     now = time.strftime("%d.%m %H:%M")
     text = f"<b>🔥 Лучшие прокси SAMOLET на {now}</b>"
     
@@ -155,7 +155,6 @@ def send_final_result(proxies):
         keyboard = create_proxy_buttons(proxies)
     
     send_message(text, reply_markup=keyboard)
-    print("✅ Финальное сообщение отправлено")
 
 def parse_proxies_from_file():
     proxies = []
@@ -184,7 +183,7 @@ def main():
     
     print("🔄 Запуск обновления прокси...")
     
-    # Отправляем начальное сообщение
+    # Отправляем сообщение с прогрессом (будет удалено в конце)
     progress_message_id = send_message("🔄 <b>Запуск обновления прокси...</b>")
     if not progress_message_id:
         print("❌ Не удалось отправить начальное сообщение")
@@ -300,14 +299,15 @@ def main():
         )
         if response.status_code == 200:
             print(f"✅ Отправлено {len(proxies)} прокси в Worker")
-        else:
-            print(f"❌ Ошибка отправки: {response.status_code}")
     except Exception as e:
         print(f"❌ Ошибка отправки: {e}")
     
     time.sleep(0.5)
     
-    # Отправляем финальное сообщение как НОВОЕ (не редактируем прогресс)
+    # Удаляем сообщение с прогрессом
+    delete_message(progress_message_id)
+    
+    # Отправляем финальный результат как НОВОЕ сообщение
     send_final_result(proxies)
     print("🎉 Обновление завершено!")
 
