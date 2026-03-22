@@ -9,19 +9,13 @@ import os
 import httpx
 import time
 import re
-import sys
-
-# Получаем chat_id из аргументов командной строки
-CHAT_ID = sys.argv[1] if len(sys.argv) > 1 else "305673438"
 
 BOT_TOKEN = os.environ.get('BOT_TOKEN', '8664454935:AAFPk1ehMIJB1r9MrDRTrb9JDtpHYjg1Vjc')
 WORKER_URL = os.environ.get('WORKER_URL', 'https://telegram-proxy-bot.krichencat.workers.dev')
 
-# Получаем chat_id из аргументов командной строки
-# Если аргумент не передан, используем личный чат
-CHAT_ID = sys.argv[1] if len(sys.argv) > 1 else "305673438"
-
-print(f"📨 Результат будет отправлен в чат: {CHAT_ID}")
+# Всегда отправляем в канал
+CHAT_ID = "-1003605280638"
+print(f"📨 Результат будет отправлен в канал: {CHAT_ID}")
 
 def send_message(text, parse_mode='HTML', reply_markup=None):
     """Отправляет новое сообщение"""
