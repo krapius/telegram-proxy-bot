@@ -9,6 +9,10 @@ import os
 import httpx
 import time
 import re
+import sys
+
+# Получаем chat_id из аргументов командной строки
+CHAT_ID = sys.argv[1] if len(sys.argv) > 1 else "305673438"
 
 BOT_TOKEN = os.environ.get('BOT_TOKEN', '8664454935:AAFPk1ehMIJB1r9MrDRTrb9JDtpHYjg1Vjc')
 WORKER_URL = os.environ.get('WORKER_URL', 'https://telegram-proxy-bot.krichencat.workers.dev')
