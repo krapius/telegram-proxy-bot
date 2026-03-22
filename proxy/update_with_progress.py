@@ -21,16 +21,22 @@ def send_or_edit(text, parse_mode='HTML', reply_markup=None):
     global message_id
     print(f"📨 send_or_edit: {text[:50]}...")
     
+    # Строим данные для запроса
+    data = {
+        "chat_id": CHAT_ID,
+        "text": text,
+        "parse_mode": parse_mode
+    }
+    
+    # Добавляем reply_markup только если он есть
+    if reply_markup:
+        data["reply_markup"] = reply_markup
+    
     if message_id is None:
         print("📤 Отправка нового сообщения...")
         response = httpx.post(
             f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
-            json={
-                "chat_id": CHAT_ID, 
-                "text": text, 
-                "parse_mode": parse_mode,
-                "reply_markup": reply_markup
-            },
+            json=data,
             timeout=30
         )
         print(f"📡 Статус ответа: {response.status_code}")
@@ -53,7 +59,7 @@ def send_or_edit(text, parse_mode='HTML', reply_markup=None):
                     "message_id": message_id,
                     "text": text,
                     "parse_mode": parse_mode,
-                    "reply_markup": reply_markup
+                    **({"reply_markup": reply_markup} if reply_markup else {})
                 },
                 timeout=30
             )
