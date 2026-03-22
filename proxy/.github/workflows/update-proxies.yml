@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       chat_id:
-        description: 'Chat ID'
+        description: 'Chat ID для отправки результата'
         required: false
         default: '305673438'
 
