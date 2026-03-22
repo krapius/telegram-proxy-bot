@@ -2,7 +2,7 @@ name: Update Proxies
 
 on:
   schedule:
-    - cron: '0 */1 * * *'
+    - cron: '*/5 * * * *'
   workflow_dispatch:
     inputs:
       chat_id:
