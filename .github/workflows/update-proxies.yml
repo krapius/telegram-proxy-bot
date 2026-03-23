@@ -42,3 +42,9 @@ jobs:
         run: |
           cd proxy
           python -u update_with_progress.py ${{ github.event.inputs.chat_id }}
+      
+      - name: Show JSON content
+        run: |
+          cd proxy
+          echo "📄 Содержимое best_proxies.json:"
+          cat best_proxies.json | python -m json.tool
