@@ -32,16 +32,16 @@ GEOIP_DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "GeoLit
 STABILITY_LEVELS = {
     'quick': {
         'samples': 2,
-        'max_jitter': 200,
-        'max_loss': 30,
-        'max_ping': 400,
+        'max_jitter': 150,
+        'max_loss': 25,
+        'max_ping': 300,
         'description': 'Быстрый отбор'
     },
     'strict': {
         'samples': 5,
-        'max_jitter': 100,
-        'max_loss': 15,
-        'max_ping': 500,
+        'max_jitter': 80,
+        'max_loss': 10,
+        'max_ping': 250,
         'description': 'Жесткий отбор'
     }
 }
@@ -377,7 +377,7 @@ def test_proxy_stability(server, port, level='strict'):
     return avg_ping, jitter, loss_percent, meets_criteria, download_speed
 
 def advanced_final_check(proxies, progress_callback=None):
-    """Оптимизированная проверка стабильности с callback для прогресса"""
+    """Оптимизированная проверка стабильности с приоритетом RU прокси"""
     print("\n" + "="*70)
     print("🔬 ПРОВЕРКА СТАБИЛЬНОСТИ")
     print("="*70)
@@ -410,12 +410,12 @@ def advanced_final_check(proxies, progress_callback=None):
     
     # Этап 2: Жесткий отбор (5 замеров)
     if progress_callback:
-        progress_callback("Жесткий отбор...", 0, len(quick_pass[:8]))
+        progress_callback("Жесткий отбор...", 0, len(quick_pass[:15]))  # Увеличил до 15
     
     strict_pass = []
-    for i, p in enumerate(quick_pass[:8], 1):
+    for i, p in enumerate(quick_pass[:15], 1):
         if progress_callback:
-            progress_callback(f"Жесткий отбор: {p['server']}", i, len(quick_pass[:8]))
+            progress_callback(f"Жесткий отбор: {p['server']}", i, len(quick_pass[:15]))
         
         port_match = re.search(r'port=(\d+)', p['link'])
         port = int(port_match.group(1)) if port_match else 443
@@ -430,22 +430,35 @@ def advanced_final_check(proxies, progress_callback=None):
     
     print(f"\n✅ Жесткий отбор: {len(strict_pass)} прокси")
     
-    # Разделяем по странам
+    # Разделяем по странам с приоритетом RU
     ru_proxies = [p for p in strict_pass if 'RU' in p.get('type', '') or p.get('country') == 'RU']
     eu_proxies = [p for p in strict_pass if 'EU' in p.get('type', '') or p.get('country') not in ['RU', None]]
+    
+    # Сортируем по качеству
     ru_proxies.sort(key=lambda x: x.get('quality_score', 0), reverse=True)
     eu_proxies.sort(key=lambda x: x.get('quality_score', 0), reverse=True)
     
+    print(f"\n📊 Найдено:")
+    print(f"   🇷🇺 RU прокси: {len(ru_proxies)}")
+    print(f"   🇪🇺 EU прокси: {len(eu_proxies)}")
+    
+    # Формируем финальный список: сначала RU (до 5), потом EU (до 5)
     final_proxies = []
-    for i in range(max(len(ru_proxies[:5]), len(eu_proxies[:5]))):
-        if i < len(ru_proxies[:5]):
-            final_proxies.append(ru_proxies[:5][i])
-        if i < len(eu_proxies[:5]):
-            final_proxies.append(eu_proxies[:5][i])
+    
+    # Добавляем RU прокси (до 5 штук)
+    for i in range(min(len(ru_proxies), 5)):
+        final_proxies.append(ru_proxies[i])
+    
+    # Добавляем EU прокси (до 5 штук, но не больше 10 всего)
+    remaining_slots = 10 - len(final_proxies)
+    for i in range(min(len(eu_proxies), remaining_slots)):
+        final_proxies.append(eu_proxies[i])
     
     print(f"\n🏆 ИТОГО: {len(final_proxies)} прокси")
+    print(f"   🇷🇺 RU: {min(len(ru_proxies), 5)}")
+    print(f"   🇪🇺 EU: {len(final_proxies) - min(len(ru_proxies), 5)}")
+    
     return final_proxies[:10]
-
 
 # ===== БОТ С ПРОГРЕСС-БАРОМ =====
 class ProgressBot:
