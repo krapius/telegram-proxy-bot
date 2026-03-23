@@ -34,14 +34,14 @@ STABILITY_LEVELS = {
         'samples': 2,
         'max_jitter': 200,
         'max_loss': 30,
-        'max_ping': 300,
+        'max_ping': 400,
         'description': 'Быстрый отбор'
     },
     'strict': {
         'samples': 5,
         'max_jitter': 100,
         'max_loss': 15,
-        'max_ping': 350,
+        'max_ping': 500,
         'description': 'Жесткий отбор'
     }
 }
@@ -203,6 +203,46 @@ def create_proxy_buttons(proxies):
     return InlineKeyboardMarkup(keyboard)
 
 # ===== ФУНКЦИИ ПРОВЕРКИ СТАБИЛЬНОСТИ =====
+def test_telegram_ping(server, port, timeout=5):
+    """
+    Проверяет реальное время отклика Telegram через прокси
+    Возвращает время в мс или None если недоступен
+    """
+    import urllib.request
+    import ssl
+    
+    # Тестовый запрос к Telegram API через прокси
+    test_url = f"https://api.telegram.org/bot{TOKEN}/getMe"
+    
+    try:
+        # Настраиваем прокси для запроса
+        proxy_handler = urllib.request.ProxyHandler({
+            'http': f'http://{server}:{port}',
+            'https': f'http://{server}:{port}'
+        })
+        opener = urllib.request.build_opener(proxy_handler)
+        
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        
+        start_time = time.time()
+        req = urllib.request.Request(test_url, method='GET')
+        
+        with opener.open(req, timeout=timeout, context=ctx) as response:
+            elapsed = (time.time() - start_time) * 1000
+            data = response.read()
+            
+            # Проверяем, что ответ корректный (Telegram API вернул ok)
+            if b'"ok":true' in data:
+                return elapsed
+            return None
+            
+    except Exception as e:
+        print(f"      ⚠️ Telegram ping failed: {str(e)[:50]}")
+        return None
+
+
 def test_proxy_stability(server, port, level='strict'):
     config = STABILITY_LEVELS[level]
     pings = []
@@ -257,7 +297,7 @@ def test_proxy_stability(server, port, level='strict'):
     if http_blocked:
         return None, None, 100, False, None
     
-    # ===== РЕАЛЬНЫЙ TELEGRAM PING (важный тест!) =====
+    # ===== РЕАЛЬНЫЙ TELEGRAM PING =====
     telegram_ping = None
     
     if level == 'strict':
@@ -335,44 +375,6 @@ def test_proxy_stability(server, port, level='strict'):
     print(f"      📈 РЕЗУЛЬТАТ: Telegram ping={avg_ping:.0f}мс, джиттер={jitter:.0f}мс, потери={loss_percent:.0f}%, скорость={download_speed if download_speed else 0:.0f} КБ/с -> {status}")
     
     return avg_ping, jitter, loss_percent, meets_criteria, download_speed
-
-def test_telegram_ping(server, port, timeout=5):
-    """
-    Проверяет реальное время отклика Telegram через прокси
-    Возвращает время в мс или None если недоступен
-    """
-    import urllib.request
-    import ssl
-    
-    # Тестовый запрос к Telegram API через прокси
-    test_url = f"https://api.telegram.org/bot{TOKEN}/getMe"
-    
-    try:
-        proxy_handler = urllib.request.ProxyHandler({
-            'http': f'http://{server}:{port}',
-            'https': f'http://{server}:{port}'
-        })
-        opener = urllib.request.build_opener(proxy_handler)
-        
-        ctx = ssl.create_default_context()
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
-        
-        start_time = time.time()
-        req = urllib.request.Request(test_url, method='GET')
-        
-        with opener.open(req, timeout=timeout, context=ctx) as response:
-            elapsed = (time.time() - start_time) * 1000
-            data = response.read()
-            
-            # Проверяем, что ответ корректный
-            if b'"ok":true' in data or b'"ok":true' in data:
-                return elapsed
-            return None
-            
-    except Exception as e:
-        print(f"      ⚠️ Telegram ping failed: {str(e)[:50]}")
-        return None
 
 def advanced_final_check(proxies, progress_callback=None):
     """Оптимизированная проверка стабильности с callback для прогресса"""
@@ -840,9 +842,6 @@ class ProgressBot:
             self.current_message_id = None
             self.current_chat_id = None
 
-
-
-
     async def send_proxy_list_result(self, chat_id, message_id, proxies):
         now = datetime.now().strftime("%d.%m %H:%M")
         text = f"<b>🔥 Лучшие прокси SAMOLET на {now}</b>\n\n"
@@ -871,7 +870,6 @@ class ProgressBot:
             ping = stats.get('ping', p.get('ping', 0))
             speed = p.get('download_speed', 0)
             
-            # Определяем качество по пингу
             if ping and ping < 100:
                 quality = "🚀"
             elif ping and ping < 200:
