@@ -147,7 +147,15 @@ def update_progress(message_id, stage_num, stage_name, current, total, start_tim
 def create_proxy_buttons(proxies):
     keyboard = []
     for i, p in enumerate(proxies[:6], 1):
-        flag = p.get('flag', '🇪🇺')
+        # Определяем флаг по типу
+        proxy_type = p.get('type', '')
+        if 'RU' in proxy_type:
+            flag = '🇷🇺'
+        elif 'EU' in proxy_type:
+            flag = '🇪🇺'
+        else:
+            flag = p.get('flag', '🇪🇺')
+        
         main_button = {"text": f"{flag} Прокси #{i}", "url": p['link']}
         share_url = f"https://t.me/share/url?url={p['link']}"
         share_button = {"text": "📤", "url": share_url}
