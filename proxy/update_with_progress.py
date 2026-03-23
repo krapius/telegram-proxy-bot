@@ -147,46 +147,46 @@ def create_proxy_buttons(proxies):
     keyboard.append([{"text": "🔄 Обновить список прокси", "callback_data": "refresh"}])
     return {"inline_keyboard": keyboard}
 
-def send_final_result(proxies):
-    """Отправляет финальный результат с пингом и скоростью"""
-    now = time.strftime("%d.%m %H:%M")
-    text = f"<b>🔥 Лучшие прокси SAMOLET на {now}</b>\n\n"
+# def send_final_result(proxies):
+#     """Отправляет финальный результат с пингом и скоростью"""
+#     now = time.strftime("%d.%m %H:%M")
+#     text = f"<b>🔥 Лучшие прокси SAMOLET на {now}</b>\n\n"
     
-    if not proxies:
-        text += "❌ Нет прокси"
-        keyboard = {"inline_keyboard": [[{"text": "🔄 Обновить список", "callback_data": "refresh"}]]}
-        send_message(text, reply_markup=keyboard)
-        return
+#     if not proxies:
+#         text += "❌ Нет прокси"
+#         keyboard = {"inline_keyboard": [[{"text": "🔄 Обновить список", "callback_data": "refresh"}]]}
+#         send_message(text, reply_markup=keyboard)
+#         return
     
-    for i, p in enumerate(proxies[:6], 1):
-        flag = p.get('flag', '🇪🇺')
-        stats = p.get('strict_stats', {})
-        ping = stats.get('ping', p.get('ping', 0))
-        speed = p.get('download_speed', 0)
+#     for i, p in enumerate(proxies[:6], 1):
+#         flag = p.get('flag', '🇪🇺')
+#         stats = p.get('strict_stats', {})
+#         ping = stats.get('ping', p.get('ping', 0))
+#         speed = p.get('download_speed', 0)
         
-        # Определяем качество по пингу
-        if ping and ping < 100:
-            quality = "🚀"
-        elif ping and ping < 200:
-            quality = "✅"
-        elif ping:
-            quality = "⚠️"
-        else:
-            quality = "❓"
+#         # Определяем качество по пингу
+#         if ping and ping < 100:
+#             quality = "🚀"
+#         elif ping and ping < 200:
+#             quality = "✅"
+#         elif ping:
+#             quality = "⚠️"
+#         else:
+#             quality = "❓"
         
-        if ping and speed:
-            text += f"{flag} {quality} <b>Прокси #{i}</b> — {ping:.0f}мс | {speed:.0f} КБ/с\n"
-        elif ping:
-            text += f"{flag} {quality} <b>Прокси #{i}</b> — {ping:.0f}мс\n"
-        else:
-            text += f"{flag} {quality} <b>Прокси #{i}</b>\n"
-        text += f"<code>{p['link']}</code>\n\n"
+#         if ping and speed:
+#             text += f"{flag} {quality} <b>Прокси #{i}</b> — {ping:.0f}мс | {speed:.0f} КБ/с\n"
+#         elif ping:
+#             text += f"{flag} {quality} <b>Прокси #{i}</b> — {ping:.0f}мс\n"
+#         else:
+#             text += f"{flag} {quality} <b>Прокси #{i}</b>\n"
+#         text += f"<code>{p['link']}</code>\n\n"
     
-    text += f"\n🔄 <i>Обновляется автоматически каждые 6 часов</i>"
-    text += f"\n📊 <i>🚀 &lt;100мс — отлично | ✅ 100-200мс — хорошо | ⚠️ &gt;200мс — медленно</i>"
+#     text += f"\n🔄 <i>Обновляется автоматически каждые 6 часов</i>"
+#     text += f"\n📊 <i>🚀 &lt;100мс — отлично | ✅ 100-200мс — хорошо | ⚠️ &gt;200мс — медленно</i>"
     
-    keyboard = create_proxy_buttons(proxies[:10])
-    send_message(text, reply_markup=keyboard)
+#     keyboard = create_proxy_buttons(proxies[:10])
+#     send_message(text, reply_markup=keyboard)
 
 
 def parse_proxies_from_file():
