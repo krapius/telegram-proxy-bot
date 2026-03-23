@@ -8,6 +8,8 @@ import time
 import socket
 import statistics
 import json
+import urllib.request
+import ssl
 
 # ===== ОПТИМИЗИРОВАННЫЕ НАСТРОЙКИ =====
 PING_TIMEOUT = 10
@@ -28,6 +30,9 @@ MAX_JITTER = 250
 MAX_PACKET_LOSS = 30
 USE_TCP_PING = True
 # ==================================
+
+# ===== ТОКЕН ДЛЯ TELEGRAM =====
+TOKEN = "8664454935:AAFPk1ehMIJB1r9MrDRTrb9JDtpHYjg1Vjc"
 
 # ===== ФУНКЦИИ УПРАВЛЕНИЯ VPN =====
 def is_vpn_connected():
@@ -126,6 +131,100 @@ class VPNContext:
             print(f"📊 VPN после: {get_vpn_status()}")
 # ===== КОНЕЦ ФУНКЦИЙ VPN =====
 
+# ===== ФУНКЦИИ ПРОВЕРКИ СТАБИЛЬНОСТИ =====
+def test_telegram_ping(server, port, timeout=5):
+    """
+    Проверяет реальное время отклика Telegram через прокси
+    Возвращает время в мс или None если недоступен
+    """
+    test_url = f"https://api.telegram.org/bot{TOKEN}/getMe"
+    
+    try:
+        proxy_handler = urllib.request.ProxyHandler({
+            'http': f'http://{server}:{port}',
+            'https': f'http://{server}:{port}'
+        })
+        opener = urllib.request.build_opener(proxy_handler)
+        
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        
+        start_time = time.time()
+        req = urllib.request.Request(test_url, method='GET')
+        
+        with opener.open(req, timeout=timeout, context=ctx) as response:
+            elapsed = (time.time() - start_time) * 1000
+            data = response.read()
+            
+            if b'"ok":true' in data:
+                return elapsed
+            return None
+            
+    except Exception as e:
+        return None
+
+def test_proxy_stability(server, port, level='quick'):
+    """Проверяет стабильность прокси с TCP и реальным Telegram ping"""
+    if level == 'quick':
+        samples = 2
+        max_ping = 400
+        max_jitter = 200
+        max_loss = 30
+    else:
+        samples = 5
+        max_ping = 250
+        max_jitter = 80
+        max_loss = 10
+    
+    pings = []
+    losses = 0
+    
+    # TCP-тест
+    for i in range(samples):
+        try:
+            start = time.time()
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(3)
+            result = sock.connect_ex((server, port))
+            response_time = (time.time() - start) * 1000
+            sock.close()
+            if result == 0:
+                pings.append(response_time)
+            else:
+                losses += 1
+        except:
+            losses += 1
+        if i < samples - 1:
+            time.sleep(0.3)
+    
+    if not pings:
+        return None, None, 100, False, None
+    
+    avg_ping = sum(pings) / len(pings)
+    loss_percent = (losses / samples) * 100
+    
+    if len(pings) > 1:
+        variance = sum((p - avg_ping) ** 2 for p in pings) / len(pings)
+        jitter = variance ** 0.5
+    else:
+        jitter = 0
+    
+    # Реальный Telegram ping
+    telegram_ping = test_telegram_ping(server, port, timeout=5)
+    
+    if level == 'strict':
+        if telegram_ping:
+            avg_ping = telegram_ping
+            print(f"   📡 Реальный Telegram ping: {avg_ping:.0f}мс")
+        else:
+            print(f"   ❌ Telegram не отвечает через прокси")
+            return None, None, 100, False, None
+    
+    meets_criteria = (avg_ping <= max_ping and jitter <= max_jitter and loss_percent <= max_loss)
+    
+    return avg_ping, jitter, loss_percent, meets_criteria, None
+
 def get_latest_proxy_files():
     ru_files = glob.glob("verified/*ru*.txt")
     eu_files = glob.glob("verified/*eu*.txt")
@@ -152,7 +251,7 @@ def test_port_availability(server, port=443, timeout=3):
     except:
         return False, None
 
-def test_stability(server, port=443, samples=STABILITY_SAMPLES):
+def test_stability(server, port=443, samples=2):
     times = []
     successes = 0
     
@@ -164,7 +263,7 @@ def test_stability(server, port=443, samples=STABILITY_SAMPLES):
             times.append(response_time)
         
         if i < samples - 1:
-            time.sleep(STABILITY_INTERVAL)
+            time.sleep(0.3)
     
     if successes == 0:
         return None, None, 100, []
@@ -330,6 +429,85 @@ def extract_proxies_from_file(file_path, proxy_type):
     print(f"\n   📊 ИТОГ: ✅ {validated} стабильных, ⚠️ {unstable} нестабильных, ❌ {failed} недоступных")
     print(f"   ⏱️  Время: {elapsed:.0f}с")
     return proxies
+
+def advanced_final_check(proxies, progress_callback=None):
+    """Оптимизированная проверка стабильности с приоритетом RU прокси"""
+    print("\n" + "="*70)
+    print("🔬 ПРОВЕРКА СТАБИЛЬНОСТИ")
+    print("="*70)
+    
+    if not proxies:
+        print("❌ Нет прокси для проверки")
+        return []
+    
+    # Быстрый отбор
+    quick_pass = []
+    ru_quick_count = 0
+    
+    for i, p in enumerate(proxies[:30], 1):
+        if 'link' not in p:
+            continue
+        
+        is_ru = 'RU' in p.get('type', '') or p.get('country') == 'RU'
+        
+        port_match = re.search(r'port=(\d+)', p['link'])
+        port = int(port_match.group(1)) if port_match else 443
+        avg_ping, jitter, loss, passed, _ = test_proxy_stability(p['server'], port, level='quick')
+        
+        if passed:
+            quick_pass.append(p)
+            if is_ru:
+                ru_quick_count += 1
+                print(f"   ✅ RU прокси прошел быстрый отбор: {p['server']}")
+    
+    print(f"\n✅ Быстрый отбор: {len(quick_pass)} прокси (RU: {ru_quick_count})")
+    
+    if len(quick_pass) < 3:
+        return quick_pass[:5]
+    
+    # Жесткий отбор
+    strict_pass = []
+    ru_strict_count = 0
+    
+    for i, p in enumerate(quick_pass[:15], 1):
+        is_ru = 'RU' in p.get('type', '') or p.get('country') == 'RU'
+        
+        port_match = re.search(r'port=(\d+)', p['link'])
+        port = int(port_match.group(1)) if port_match else 443
+        avg_ping, jitter, loss, passed, download_speed = test_proxy_stability(p['server'], port, level='strict')
+        
+        if passed:
+            quality_score = ((300 - min(avg_ping, 300)) * 0.4 + (100 - min(jitter, 100)) * 0.35 + (100 - loss) * 0.25)
+            p['quality_score'] = quality_score
+            p['strict_stats'] = {'ping': avg_ping, 'jitter': jitter, 'loss': loss}
+            if download_speed:
+                p['download_speed'] = download_speed
+            strict_pass.append(p)
+            
+            if is_ru:
+                ru_strict_count += 1
+                print(f"   ✅ RU прокси прошел жесткий отбор: {p['server']} (пинг={avg_ping:.0f}мс)")
+    
+    print(f"\n✅ Жесткий отбор: {len(strict_pass)} прокси (RU: {ru_strict_count})")
+    
+    # Разделяем по странам
+    ru_proxies = [p for p in strict_pass if 'RU' in p.get('type', '') or p.get('country') == 'RU']
+    eu_proxies = [p for p in strict_pass if 'EU' in p.get('type', '') or p.get('country') not in ['RU', None]]
+    
+    ru_proxies.sort(key=lambda x: x.get('quality_score', 0), reverse=True)
+    eu_proxies.sort(key=lambda x: x.get('quality_score', 0), reverse=True)
+    
+    print(f"\n📊 RU прокси: {len(ru_proxies)}, EU прокси: {len(eu_proxies)}")
+    
+    # Формируем финальный список
+    final_proxies = []
+    for i in range(min(len(ru_proxies), 5)):
+        final_proxies.append(ru_proxies[i])
+    for i in range(min(len(eu_proxies), 10 - len(final_proxies))):
+        final_proxies.append(eu_proxies[i])
+    
+    print(f"\n🏆 ИТОГО: {len(final_proxies)} прокси (RU: {min(len(ru_proxies), 5)})")
+    return final_proxies[:10]
 
 def save_proxies_to_file(proxies, filename="best_proxies.txt"):
     seen_servers = set()
