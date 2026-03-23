@@ -246,6 +246,7 @@ def parse_proxies_from_file():
     print(f"📦 Найдено {len(proxies)} прокси в файле")
     return proxies
 
+
 def main():
     start_time = time.time()
     
@@ -293,7 +294,8 @@ def main():
         if not line and process.poll() is not None:
             break
         if line:
-            print(f"   main.py: {line.strip()[:100]}")
+            line = line.strip()
+            print(f"   main.py: {line[:100]}")
             match = re.search(r'\[(\d+)/(\d+)\]', line)
             if match:
                 checked = int(match.group(1))
@@ -331,12 +333,17 @@ def main():
     tested = 0
     total_to_test = max(total_proxies, 50)
     
+    # Собираем весь вывод для отладки
+    test_output = []
+    
     while True:
         line = process.stdout.readline()
         if not line and process.poll() is not None:
             break
         if line:
-            print(f"   test_proxies.py: {line.strip()[:100]}")
+            line = line.strip()
+            test_output.append(line)
+            print(f"   test_proxies.py: {line[:100]}")
             if 'Проверка' in line and ':' in line:
                 tested += 1
                 percent = int(tested * 100 / total_to_test) if total_to_test > 0 else 0
@@ -348,33 +355,38 @@ def main():
     print("✅ test_proxies.py завершён")
     
     # Отладка: проверяем, какие файлы создались
-    print("\n🔍 ОТЛАДКА: Проверка созданных файлов:")
+    print("\n" + "="*60)
+    print("🔍 ОТЛАДКА: Проверка созданных файлов")
+    print("="*60)
     print(f"   Текущая директория: {os.getcwd()}")
     print(f"   best_proxies.txt exists: {os.path.exists('best_proxies.txt')}")
     print(f"   best_proxies.json exists: {os.path.exists('best_proxies.json')}")
     
-    # Если файлов нет, показываем содержимое папки
-    if not os.path.exists('best_proxies.txt') and not os.path.exists('best_proxies.json'):
-        print(f"\n⚠️ Файлы с прокси не найдены!")
-        print(f"\n📁 Содержимое текущей папки:")
-        for f in os.listdir('.'):
-            print(f"   - {f}")
+    # Показываем все файлы в папке
+    print(f"\n📁 Все файлы в текущей папке:")
+    for f in sorted(os.listdir('.')):
+        if f.endswith('.txt') or f.endswith('.json') or f == 'verified':
+            if os.path.isdir(f):
+                print(f"   📁 {f}/")
+            else:
+                size = os.path.getsize(f)
+                print(f"   📄 {f} ({size} bytes)")
     
     # Показываем содержимое папки verified
     if os.path.exists('verified'):
-        print(f"\n📁 Файлы в verified/:")
-        for f in os.listdir('verified'):
+        print(f"\n📁 Содержимое папки verified/:")
+        for f in sorted(os.listdir('verified')):
             if f.endswith('.txt') or f.endswith('.json'):
                 print(f"   - {f}")
     else:
         print(f"\n⚠️ Папка verified не найдена!")
     
-    # Показываем все JSON файлы в корне
-    print(f"\n📁 JSON файлы в корне:")
-    for f in os.listdir('.'):
-        if f.endswith('.json'):
-            print(f"   - {f}")
-    print("")
+    # Показываем последние 10 строк вывода test_proxies.py для отладки
+    print(f"\n📋 Последние строки вывода test_proxies.py:")
+    for line in test_output[-10:]:
+        print(f"   {line}")
+    
+    print("="*60 + "\n")
     
     # Парсим результат
     proxies = parse_proxies_from_file()
@@ -383,6 +395,13 @@ def main():
     print(f"📊 После парсинга найдено прокси: {total_proxies_found}")
     
     update_progress(progress_message_id, 3, f"Найдено {total_proxies_found} стабильных", 100, 100, start_time, total_proxies_found)
+    
+    # Если прокси не найдены, завершаем
+    if total_proxies_found == 0:
+        print("❌ Нет стабильных прокси для отправки")
+        delete_message(progress_message_id)
+        send_message("❌ <b>Не удалось найти стабильные прокси</b>\n\nПопробуйте позже")
+        return
     
     # Этап 4: Анализ (имитация)
     update_progress(progress_message_id, 4, "Анализ стабильности...", 0, 100, start_time, total_proxies_found)
@@ -416,7 +435,6 @@ def main():
             # Просим Worker отправить сообщение в канал (имитируем webhook с командой /start)
             print(f"📨 Запрашиваем отправку сообщения в канал...")
             try:
-                # Имитируем сообщение от пользователя с командой /start
                 fake_update = {
                     "message": {
                         "chat": {"id": int(CHAT_ID)},
@@ -442,10 +460,7 @@ def main():
     # Удаляем сообщение с прогрессом
     delete_message(progress_message_id)
     
-    # Отправляем финальный результат (закомментировано, используем Worker)
-    # send_final_result(proxies)
     print("🎉 Обновление завершено!")
-
 
 if __name__ == "__main__":
     main()
