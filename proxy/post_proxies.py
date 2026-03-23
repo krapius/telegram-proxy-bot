@@ -32,9 +32,9 @@ GEOIP_DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "GeoLit
 STABILITY_LEVELS = {
     'quick': {
         'samples': 2,
-        'max_jitter': 250,
-        'max_loss': 30,
-        'max_ping': 800,
+        'max_jitter': 500,      # было 250
+        'max_loss': 50,         # было 30
+        'max_ping': 1200,       # было 800
         'description': 'Быстрый отбор'
     },
     'strict': {
@@ -237,6 +237,7 @@ def test_proxy_stability(server, port, level='strict'):
         jitter = variance ** 0.5
     else:
         jitter = 0
+    print(f"   📊 Тест стабильности ({config['description']}) для {server}:{port}")
     
     # ===== ПРОВЕРКА HTTP СТАТУСА (блокировка Telegram) =====
     http_blocked = False
@@ -324,7 +325,7 @@ def advanced_final_check(proxies, progress_callback=None):
         progress_callback("Быстрый отбор...", 0, len(proxies[:15]))
     
     quick_pass = []
-    for i, p in enumerate(proxies[:15], 1):
+    for i, p in enumerate(proxies[:30], 1):
         if progress_callback:
             progress_callback(f"Быстрый отбор: {p['server']}", i, len(proxies[:15]))
         
