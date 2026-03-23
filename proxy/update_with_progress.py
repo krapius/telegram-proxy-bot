@@ -293,6 +293,7 @@ def main():
         if not line and process.poll() is not None:
             break
         if line:
+            print(f"   main.py: {line.strip()[:100]}")
             match = re.search(r'\[(\d+)/(\d+)\]', line)
             if match:
                 checked = int(match.group(1))
@@ -311,6 +312,7 @@ def main():
     
     process.wait(timeout=10)
     print("✅ main.py завершён")
+    print(f"📊 main.py собрал прокси: {total_proxies}")
     
     # Этап 3: test_proxies.py
     print("📊 Запуск test_proxies.py...")
@@ -333,12 +335,14 @@ def main():
         line = process.stdout.readline()
         if not line and process.poll() is not None:
             break
-        if line and 'Проверка' in line and ':' in line:
-            tested += 1
-            percent = int(tested * 100 / total_to_test) if total_to_test > 0 else 0
-            if percent >= last_percent + 10 or percent == 100:
-                last_percent = percent
-                update_progress(progress_message_id, 3, f"TCP-тестирование... {percent}% ({tested}/{total_to_test})", percent, 100, start_time, total_proxies)
+        if line:
+            print(f"   test_proxies.py: {line.strip()[:100]}")
+            if 'Проверка' in line and ':' in line:
+                tested += 1
+                percent = int(tested * 100 / total_to_test) if total_to_test > 0 else 0
+                if percent >= last_percent + 10 or percent == 100:
+                    last_percent = percent
+                    update_progress(progress_message_id, 3, f"TCP-тестирование... {percent}% ({tested}/{total_to_test})", percent, 100, start_time, total_proxies)
     
     process.wait(timeout=10)
     print("✅ test_proxies.py завершён")
@@ -348,6 +352,13 @@ def main():
     print(f"   Текущая директория: {os.getcwd()}")
     print(f"   best_proxies.txt exists: {os.path.exists('best_proxies.txt')}")
     print(f"   best_proxies.json exists: {os.path.exists('best_proxies.json')}")
+    
+    # Если файлов нет, показываем содержимое папки
+    if not os.path.exists('best_proxies.txt') and not os.path.exists('best_proxies.json'):
+        print(f"\n⚠️ Файлы с прокси не найдены!")
+        print(f"\n📁 Содержимое текущей папки:")
+        for f in os.listdir('.'):
+            print(f"   - {f}")
     
     # Показываем содержимое папки verified
     if os.path.exists('verified'):
@@ -368,6 +379,8 @@ def main():
     # Парсим результат
     proxies = parse_proxies_from_file()
     total_proxies_found = len(proxies)
+    
+    print(f"📊 После парсинга найдено прокси: {total_proxies_found}")
     
     update_progress(progress_message_id, 3, f"Найдено {total_proxies_found} стабильных", 100, 100, start_time, total_proxies_found)
     
@@ -432,6 +445,7 @@ def main():
     # Отправляем финальный результат (закомментировано, используем Worker)
     # send_final_result(proxies)
     print("🎉 Обновление завершено!")
+
 
 if __name__ == "__main__":
     main()
