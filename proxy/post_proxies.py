@@ -39,9 +39,9 @@ STABILITY_LEVELS = {
     },
     'strict': {
         'samples': 5,
-        'max_jitter': 80,
-        'max_loss': 10,
-        'max_ping': 250,
+        'max_jitter': 120,      # увеличил с 80
+        'max_loss': 15,         # увеличил с 10
+        'max_ping': 350,        # увеличил с 250 (RU прокси с пингом 342мс теперь проходят)
         'description': 'Жесткий отбор'
     }
 }
