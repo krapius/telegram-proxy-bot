@@ -27,3 +27,4 @@ GeoLite2-Country.mmdb
 
 # Local scripts
 proxy/update_proxies.sh
+proxies.json
