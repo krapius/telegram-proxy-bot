@@ -1,3 +1,5 @@
+cd /Users/artem/projects/telegram-proxy-collector
+cat > proxy/test_proxies.py << 'EOF'
 #!/usr/bin/env python3
 import re
 import os
@@ -129,9 +131,9 @@ def extract_proxies_from_file(file_path, proxy_type):
     if not file_path or not os.path.exists(file_path):
         return proxies
     
-    if 'ru' in file_path.lower():
+    if proxy_type == 'ru':
         real_type = '🇷🇺 RU'
-    elif 'eu' in file_path.lower():
+    elif proxy_type == 'eu':
         real_type = '🇪🇺 EU'
     else:
         real_type = '🌍 ALL'
@@ -162,7 +164,14 @@ def extract_proxies_from_file(file_path, proxy_type):
         proxy_info['port'] = int(port_match.group(1)) if port_match else 443
         
         avg_time, jitter, packet_loss, _ = test_stability(proxy_info['server'], proxy_info['port'])
-        if avg_time is None or avg_time > MAX_PING or jitter > MAX_JITTER or packet_loss > MAX_PACKET_LOSS:
+        
+        if avg_time is None:
+            continue
+        if avg_time > MAX_PING:
+            continue
+        if jitter > MAX_JITTER:
+            continue
+        if packet_loss > MAX_PACKET_LOSS:
             continue
         
         proxy_info['ping'] = avg_time
@@ -179,6 +188,9 @@ def extract_proxies_from_file(file_path, proxy_type):
     return proxies
 
 def save_proxies_to_file(proxies, filename="best_proxies.txt"):
+    if not proxies:
+        return []
+    
     seen_servers = set()
     unique_proxies = []
     for p in proxies:
@@ -190,22 +202,23 @@ def save_proxies_to_file(proxies, filename="best_proxies.txt"):
     
     unique_proxies.sort(key=lambda x: x.get('quality_score', 0), reverse=True)
     
-    ru_proxies = [p for p in unique_proxies if 'RU' in p['type']]
-    eu_proxies = [p for p in unique_proxies if 'EU' in p['type']]
+    ru_proxies = [p for p in unique_proxies if '🇷🇺' in p['type']]
+    eu_proxies = [p for p in unique_proxies if '🇪🇺' in p['type']]
+    
+    print(f"\n📊 Результаты фильтрации: RU={len(ru_proxies)}, EU={len(eu_proxies)}")
+    
     ru_top = ru_proxies[:5]
     eu_top = eu_proxies[:5]
     
-    final_proxies = []
-    for i in range(max(len(ru_top), len(eu_top))):
-        if i < len(ru_top):
-            final_proxies.append(ru_top[i])
-        if i < len(eu_top):
-            final_proxies.append(eu_top[i])
+    final_proxies = ru_top + eu_top
     final_proxies = final_proxies[:10]
+    
+    print(f"🏆 В финальный список попало: RU={len(ru_top)}, EU={len(eu_top)}")
     
     with open(filename, 'w') as f:
         f.write(f"# Лучшие прокси от {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-        f.write(f"# Всего: {len(unique_proxies)} (RU: {len(ru_proxies)}, EU: {len(eu_proxies)})\n\n")
+        f.write(f"# Всего стабильных: {len(unique_proxies)} (RU: {len(ru_proxies)}, EU: {len(eu_proxies)})\n")
+        f.write(f"# В выдаче: {len(final_proxies)} прокси\n\n")
         for i, p in enumerate(final_proxies, 1):
             stats = f"п:{p['ping']:.0f}мс дж:{p['jitter']:.0f}мс пот:{p['packet_loss']:.0f}%"
             f.write(f"# {i}. {p['type']} {p['server']} — {stats}\n")
@@ -213,6 +226,7 @@ def save_proxies_to_file(proxies, filename="best_proxies.txt"):
     
     with open('best_proxies.json', 'w', encoding='utf-8') as f:
         json.dump(final_proxies, f, ensure_ascii=False, indent=2)
-    print(f"💾 Сохранено в best_proxies.json")
+    print(f"💾 Сохранено {len(final_proxies)} прокси в best_proxies.json")
     
     return final_proxies
+EOF
