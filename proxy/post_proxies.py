@@ -13,6 +13,8 @@ import requests
 import ipaddress
 import httpx
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+import urllib.request
+import ssl
 
 
 # ===== НАСТРОЙКИ =====
@@ -236,41 +238,59 @@ def test_proxy_stability(server, port, level='strict'):
     else:
         jitter = 0
     
-    # ===== НОВАЯ ПРОВЕРКА: ЗАГРУЗКА НЕБОЛЬШОГО ФАЙЛА =====
+    # ===== ПРОВЕРКА HTTP СТАТУСА (блокировка Telegram) =====
+    http_blocked = False
+    if level == 'strict':
+        try:
+            test_url = f"http://{server}:{port}/"
+            req = urllib.request.Request(test_url, method='HEAD')
+            with urllib.request.urlopen(req, timeout=3) as response:
+                if response.getcode() == 403:
+                    print(f"      ❌ HTTP 403 - IP заблокирован Telegram")
+                    http_blocked = True
+        except:
+            pass
+    
+    if http_blocked:
+        return None, None, 100, False
+    
+    # ===== ПРОВЕРКА СКОРОСТИ ЗАГРУЗКИ (реальный файл) =====
     download_speed = None
     download_success = False
     
     if level == 'strict':
-        print(f"\n      📥 Тест загрузки (скачивание тестового файла):")
+        print(f"\n      📥 Тест скорости загрузки:")
         
-        # Небольшой тестовый файл (1 МБ)
-        test_url = f"http://{server}:{port}/speedtest/1mb.bin"
+        # Используем известный тестовый файл (1 МБ)
+        test_urls = [
+            f"http://{server}:{port}/1MB.zip",
+            f"http://{server}:{port}/test.bin",
+            f"http://{server}:{port}/speedtest/1mb.bin"
+        ]
         
-        try:
-            import urllib.request
-            import ssl
-            
-            ctx = ssl.create_default_context()
-            ctx.check_hostname = False
-            ctx.verify_mode = ssl.CERT_NONE
-            
-            start_time = time.time()
-            req = urllib.request.Request(test_url, method='GET')
-            
-            # Скачиваем первые 100 КБ для проверки скорости
-            with urllib.request.urlopen(req, timeout=5, context=ctx) as response:
-                data = response.read(102400)  # 100 КБ
-                elapsed = time.time() - start_time
+        for test_url in test_urls:
+            try:
+                ctx = ssl.create_default_context()
+                ctx.check_hostname = False
+                ctx.verify_mode = ssl.CERT_NONE
                 
-                if len(data) > 0:
-                    download_speed = (len(data) / 1024) / elapsed  # КБ/сек
-                    download_success = True
-                    print(f"         ✅ Скорость загрузки: {download_speed:.0f} КБ/сек")
-                else:
-                    print(f"         ⚠️ Пустой ответ")
+                start_time = time.time()
+                req = urllib.request.Request(test_url, method='GET')
+                
+                with urllib.request.urlopen(req, timeout=5, context=ctx) as response:
+                    data = response.read(102400)  # 100 КБ
+                    elapsed = time.time() - start_time
                     
-        except Exception as e:
-            print(f"         ❌ Ошибка загрузки: {str(e)[:60]}")
+                    if len(data) > 0 and elapsed > 0:
+                        download_speed = (len(data) / 1024) / elapsed  # КБ/сек
+                        download_success = True
+                        print(f"         ✅ Скорость: {download_speed:.0f} КБ/сек")
+                        break
+            except:
+                continue
+        
+        if not download_success:
+            print(f"         ⚠️ Тест скорости не удался (нет тестового файла)")
     
     meets_criteria = (
         avg_ping <= config['max_ping'] and 
@@ -278,7 +298,7 @@ def test_proxy_stability(server, port, level='strict'):
         loss_percent <= config['max_loss']
     )
     
-    # Для strict уровня добавляем условие скорости загрузки (минимально 50 КБ/сек)
+    # Для strict уровня учитываем скорость (если тест прошёл)
     if level == 'strict' and download_success:
         if download_speed < 50:
             meets_criteria = False
