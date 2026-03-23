@@ -872,7 +872,7 @@ class ProgressBot:
                         print(f"⚠️ Ошибка отправки: {e}")
                     await self.send_message(chat_id, "❌ Не удалось найти прокси\nПопробуйте позже")
             else:
-                await self.send_proxy_list_result(chat_id, message_id, working_proxies[:10])
+                # await self.send_proxy_list_result(chat_id, message_id, working_proxies[:10])
             
             print(f"\n✅ Обновление завершено! Найдено {total_proxies_found} прокси")
             
