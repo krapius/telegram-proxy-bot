@@ -34,7 +34,7 @@ STABILITY_LEVELS = {
         'samples': 2,
         'max_jitter': 300,
         'max_loss': 30,
-        'max_ping': 600,
+        'max_ping': 250,
         'description': 'Быстрый отбор'
     },
     'strict': {
@@ -436,7 +436,6 @@ class ProgressBot:
         if reply_markup:
             data['reply_markup'] = reply_markup.to_dict() if hasattr(reply_markup, 'to_dict') else reply_markup
         
-        # Добавляем повторные попытки
         for attempt in range(3):
             try:
                 return await self._request('post', 'editMessageText', json=data)
@@ -542,7 +541,6 @@ class ProgressBot:
         last_percent_sent = -1
         
         async def safe_update(stage_num, stage_name, current=None, total=None, total_proxies=0):
-            """Безопасное обновление с защитой от слишком частых вызовов"""
             nonlocal last_update_time, last_percent_sent
             now = time.time()
             
@@ -550,10 +548,6 @@ class ProgressBot:
             if current is not None and total is not None and total > 0:
                 percent = int(current * 100 / total)
             
-            # Обновляем только если:
-            # 1. Прошло больше 1.5 секунды ИЛИ
-            # 2. Процент изменился на 10% ИЛИ
-            # 3. Это финальное обновление (100%)
             should_update = False
             if now - last_update_time >= 1.5:
                 should_update = True
@@ -575,13 +569,11 @@ class ProgressBot:
                     print(f"⚠️ Ошибка обновления ({stage_name}): {e}")
         
         try:
-            # Этап 1: Подготовка
             print("📍 Этап 1: Подготовка")
             await safe_update(1, "Подготовка...", 1, 1)
             await asyncio.sleep(0.5)
             await safe_update(1, "Готов к работе", 1, 1)
             
-            # Этап 2: main.py (сбор прокси)
             print("📍 Этап 2: Запуск main.py")
             await safe_update(2, "Запуск сбора прокси...", 0, 1)
             
@@ -633,7 +625,6 @@ class ProgressBot:
             print(f"   Собрано прокси: {total_proxies_found}")
             await safe_update(2, f"Собрано {total_proxies_found} прокси", 100, 100, total_proxies_found)
             
-            # Этап 3: test_proxies.py (проверка)
             print("📍 Этап 3: Запуск test_proxies.py")
             await safe_update(3, "TCP-тестирование...", 0, 100, total_proxies_found)
             
@@ -676,7 +667,6 @@ class ProgressBot:
             print(f"   Найдено стабильных: {total_proxies_found}")
             await safe_update(3, f"Найдено {total_proxies_found} стабильных", 100, 100, total_proxies_found)
             
-            # Этап 4: Анализ стабильности
             print("📍 Этап 4: Анализ стабильности")
             await safe_update(4, "Анализ стабильности...", 0, 100, total_proxies_found)
             
@@ -732,7 +722,6 @@ class ProgressBot:
                         except Exception as e:
                             print(f"      ⚠️ Ошибка: {e}")
                     
-                    # Разделяем по странам
                     ru_proxies = [p for p in strict_pass if 'RU' in p.get('type', '') or p.get('country') == 'RU']
                     eu_proxies = [p for p in strict_pass if 'EU' in p.get('type', '') or p.get('country') not in ['RU', None]]
                     ru_proxies.sort(key=lambda x: x.get('quality_score', 0), reverse=True)
@@ -757,10 +746,8 @@ class ProgressBot:
             except Exception as e:
                 print(f"⚠️ Ошибка обновления этапа 4: {e}")
             
-            # Небольшая пауза перед следующими этапами
             await asyncio.sleep(0.5)
             
-            # Этап 5: Проверка соединения
             print("📍 Этап 5: Проверка соединения")
             try:
                 await safe_update(5, "Проверка соединения...", 100, 100, total_proxies_found)
@@ -768,7 +755,6 @@ class ProgressBot:
                 print(f"⚠️ Ошибка обновления этапа 5: {e}")
             await asyncio.sleep(0.5)
             
-            # Этап 6: Подготовка результатов
             print("📍 Этап 6: Подготовка результатов")
             try:
                 await safe_update(6, "Формирую список...", 100, 100, total_proxies_found)
@@ -776,7 +762,6 @@ class ProgressBot:
                 print(f"⚠️ Ошибка обновления этапа 6: {e}")
             await asyncio.sleep(0.5)
             
-            # Отправляем результат с обработкой ошибок
             if total_proxies_found == 0:
                 try:
                     await self.edit_message_text(chat_id, message_id, 
@@ -807,9 +792,6 @@ class ProgressBot:
             updating_flag = False
             self.current_message_id = None
             self.current_chat_id = None
-    
-
-
 
     async def send_proxy_list_result(self, chat_id, message_id, proxies):
         now = datetime.now().strftime("%d.%m %H:%M")
@@ -833,14 +815,12 @@ class ProgressBot:
                         await self.send_message(chat_id, text, parse_mode='HTML', reply_markup=keyboard)
             return
         
-        # Формируем текст с пингом и скоростью
         for i, p in enumerate(proxies[:6], 1):
             flag = p.get('flag', '🇷🇺' if 'RU' in p.get('type', '') else '🇪🇺')
             stats = p.get('strict_stats', {})
             ping = stats.get('ping', p.get('ping', 0))
             speed = p.get('download_speed', 0)
             
-            # Определяем качество
             if ping and ping < 100:
                 quality = "🚀"
             elif ping and ping < 200:
@@ -859,7 +839,7 @@ class ProgressBot:
             text += f"<code>{p['link']}</code>\n\n"
         
         text += f"\n🔄 <i>Обновляется автоматически каждые 6 часов</i>"
-        text += f"\n📊 <i>Пинг {'<100' if ping else '?'}мс — отлично | 100-200мс — хорошо | >200мс — медленно</i>"
+        text += f"\n📊 <i>🚀 <100мс — отлично | ✅ 100-200мс — хорошо | ⚠️ >200мс — медленно</i>"
         
         keyboard = create_proxy_buttons(proxies[:10])
         try:
@@ -939,7 +919,6 @@ class ProgressBot:
         print("📱 Бот готов! Отправьте /start")
         print("="*50 + "\n")
         
-        # Счетчик ошибок для авто-перезапуска
         error_count = 0
         max_errors = 10
         
@@ -948,7 +927,6 @@ class ProgressBot:
                 offset = self.last_update_id + 1 if self.last_update_id else None
                 updates = await self.get_updates(offset=offset, timeout=30)
                 
-                # Сбрасываем счетчик ошибок при успешном получении
                 error_count = 0
                 
                 if updates['ok'] and updates['result']:
@@ -958,14 +936,12 @@ class ProgressBot:
                             self.last_update_id = update['update_id']
                         except Exception as e:
                             print(f"⚠️ Ошибка обработки обновления: {e}")
-                            # Продолжаем с другими обновлениями
                 
                 await asyncio.sleep(0.5)
                 
             except asyncio.CancelledError:
                 break
             except httpx.ReadTimeout:
-                # Таймаут - нормальная ситуация, просто продолжаем
                 error_count = 0
                 await asyncio.sleep(0.5)
             except httpx.ConnectError as e:
