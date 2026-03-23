@@ -32,16 +32,16 @@ GEOIP_DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "GeoLit
 STABILITY_LEVELS = {
     'quick': {
         'samples': 2,
-        'max_jitter': 500,      # было 250
-        'max_loss': 50,         # было 30
-        'max_ping': 1200,       # было 800
+        'max_jitter': 300,      # уменьшил с 500
+        'max_loss': 30,         # уменьшил с 50
+        'max_ping': 600,        # уменьшил с 1200
         'description': 'Быстрый отбор'
     },
     'strict': {
         'samples': 5,
-        'max_jitter': 80,
-        'max_loss': 10,
-        'max_ping': 300,
+        'max_jitter': 60,       # уменьшил с 80
+        'max_loss': 5,          # уменьшил с 10
+        'max_ping': 200,        # уменьшил с 300
         'description': 'Жесткий отбор'
     }
 }
@@ -227,7 +227,7 @@ def test_proxy_stability(server, port, level='strict'):
             time.sleep(0.3)
     
     if not pings:
-        return None, None, 100, False
+        return None, None, 100, False, None
     
     avg_ping = sum(pings) / len(pings)
     loss_percent = (losses / config['samples']) * 100
@@ -237,6 +237,7 @@ def test_proxy_stability(server, port, level='strict'):
         jitter = variance ** 0.5
     else:
         jitter = 0
+    
     print(f"   📊 Тест стабильности ({config['description']}) для {server}:{port}")
     
     # ===== ПРОВЕРКА HTTP СТАТУСА (блокировка Telegram) =====
@@ -253,7 +254,7 @@ def test_proxy_stability(server, port, level='strict'):
             pass
     
     if http_blocked:
-        return None, None, 100, False
+        return None, None, 100, False, None
     
     # ===== ПРОВЕРКА СКОРОСТИ ЗАГРУЗКИ (реальный файл) =====
     download_speed = None
@@ -308,7 +309,7 @@ def test_proxy_stability(server, port, level='strict'):
     status = "✅ ПРОШЕЛ" if meets_criteria else "❌ НЕ ПРОШЕЛ"
     print(f"      📈 Результат: п={avg_ping:.0f}мс дж={jitter:.0f}мс пот={loss_percent:.0f}% {status}")
     
-    return avg_ping, jitter, loss_percent, meets_criteria
+    return avg_ping, jitter, loss_percent, meets_criteria, download_speed
 
 def advanced_final_check(proxies, progress_callback=None):
     """Оптимизированная проверка стабильности с callback для прогресса"""
@@ -322,18 +323,18 @@ def advanced_final_check(proxies, progress_callback=None):
     
     # Этап 1: Быстрый отбор (2 замера)
     if progress_callback:
-        progress_callback("Быстрый отбор...", 0, len(proxies[:15]))
+        progress_callback("Быстрый отбор...", 0, len(proxies[:30]))
     
     quick_pass = []
     for i, p in enumerate(proxies[:30], 1):
         if progress_callback:
-            progress_callback(f"Быстрый отбор: {p['server']}", i, len(proxies[:15]))
+            progress_callback(f"Быстрый отбор: {p['server']}", i, len(proxies[:30]))
         
         if 'link' not in p:
             continue
         port_match = re.search(r'port=(\d+)', p['link'])
         port = int(port_match.group(1)) if port_match else 443
-        _, _, _, passed = test_proxy_stability(p['server'], port, level='quick')
+        _, _, _, passed, _ = test_proxy_stability(p['server'], port, level='quick')
         if passed:
             quick_pass.append(p)
     
@@ -353,10 +354,13 @@ def advanced_final_check(proxies, progress_callback=None):
         
         port_match = re.search(r'port=(\d+)', p['link'])
         port = int(port_match.group(1)) if port_match else 443
-        avg_ping, jitter, loss, passed = test_proxy_stability(p['server'], port, level='strict')
+        avg_ping, jitter, loss, passed, download_speed = test_proxy_stability(p['server'], port, level='strict')
         if passed:
             quality_score = ((300 - min(avg_ping, 300)) * 0.4 + (100 - min(jitter, 100)) * 0.35 + (100 - loss) * 0.25)
             p['quality_score'] = quality_score
+            p['strict_stats'] = {'ping': avg_ping, 'jitter': jitter, 'loss': loss}
+            if download_speed:
+                p['download_speed'] = download_speed
             strict_pass.append(p)
     
     print(f"\n✅ Жесткий отбор: {len(strict_pass)} прокси")
@@ -376,6 +380,7 @@ def advanced_final_check(proxies, progress_callback=None):
     
     print(f"\n🏆 ИТОГО: {len(final_proxies)} прокси")
     return final_proxies[:10]
+
 
 # ===== БОТ С ПРОГРЕСС-БАРОМ =====
 class ProgressBot:
@@ -787,12 +792,14 @@ class ProgressBot:
             self.current_message_id = None
             self.current_chat_id = None
     
+
+
     async def send_proxy_list_result(self, chat_id, message_id, proxies):
         now = datetime.now().strftime("%d.%m %H:%M")
-        text = f"<b>🔥 Лучшие прокси SAMOLET на {now}</b>"
+        text = f"<b>🔥 Лучшие прокси SAMOLET на {now}</b>\n\n"
         
         if not proxies:
-            text += "\n❌ Нет прокси"
+            text += "❌ Нет прокси"
             keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🔄 Обновить список", callback_data="refresh")]])
             try:
                 await self.edit_message_text(chat_id, message_id, text, parse_mode='HTML', reply_markup=keyboard)
@@ -809,6 +816,23 @@ class ProgressBot:
                         await self.send_message(chat_id, text, parse_mode='HTML', reply_markup=keyboard)
             return
         
+        # Формируем текст с пингом и скоростью
+        for i, p in enumerate(proxies[:6], 1):
+            flag = p.get('flag', '🇷🇺' if 'RU' in p.get('type', '') else '🇪🇺')
+            stats = p.get('strict_stats', {})
+            ping = stats.get('ping', p.get('ping', 0))
+            speed = p.get('download_speed', 0)
+            
+            if ping and speed:
+                text += f"{flag} <b>Прокси #{i}</b> — {ping:.0f}мс | {speed:.0f} КБ/с\n"
+            elif ping:
+                text += f"{flag} <b>Прокси #{i}</b> — {ping:.0f}мс\n"
+            else:
+                text += f"{flag} <b>Прокси #{i}</b>\n"
+            text += f"<code>{p['link']}</code>\n\n"
+        
+        text += f"\n🔄 <i>Обновляется автоматически каждые 6 часов</i>"
+        
         keyboard = create_proxy_buttons(proxies[:10])
         try:
             await self.edit_message_text(chat_id, message_id, text, parse_mode='HTML', reply_markup=keyboard)
@@ -823,7 +847,7 @@ class ProgressBot:
                     await self.edit_message_text(chat_id, message_id, text, parse_mode='HTML', reply_markup=keyboard)
                 except:
                     await self.send_message(chat_id, text, parse_mode='HTML', reply_markup=keyboard)
-    
+
     async def process_update(self, update):
         try:
             if 'message' in update:
