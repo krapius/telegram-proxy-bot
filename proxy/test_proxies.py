@@ -1,364 +1,218 @@
 #!/usr/bin/env python3
-import os
-import requests
 import re
-import socket
-import concurrent.futures
-import time
-from datetime import datetime
-import json
+import os
 import glob
-import argparse
-import asyncio
+import time
+import socket
+import statistics
+import json
+from datetime import datetime
 
-try:
-    from telethon import TelegramClient
-    from telethon.connection import ConnectionTcpMTProxyRandomizedIntermediate
-    TELETHON_AVAILABLE = True
-except ImportError:
-    TELETHON_AVAILABLE = False
-    print("⚠️  Telethon не установлен. Используется TCP ping (pip install telethon для MTProto)")
+# ===== НАСТРОЙКИ =====
+CHECK_LIMIT = 50
+MAX_PING = 800
+MAX_JITTER = 250
+MAX_PACKET_LOSS = 30
+STABILITY_SAMPLES = 2
+SHOW_PROGRESS = True
+# ====================
 
-# ===== API КЛЮЧИ ДЛЯ TELEGRAM =====
-API_ID = 39140172
-API_HASH = '0bb3afb1ec309c6ee9fb902c1bc9d3c3'
-# ==================================
+def clean_server(server):
+    if not server:
+        return server
+    server = server.rstrip('.')
+    server = server.strip()
+    server = re.sub(r'^https?://', '', server)
+    return server
 
-SOURCES = [
-    "https://raw.githubusercontent.com/SoliSpirit/mtproto/master/all_proxies.txt",
-    "https://raw.githubusercontent.com/Grim1313/mtproto-for-telegram/refs/heads/master/all_proxies.txt",
-    "https://raw.githubusercontent.com/ALIILAPRO/MTProtoProxy/main/mtproto.txt",
-    "https://raw.githubusercontent.com/yemixzy/proxy-projects/main/proxies/mtproto.txt",
-    "https://mtpro.xyz/api/?type=mtproto",
-    "https://mtpro.xyz/api/?type=mtproto-ru",
-]
+def clean_proxy_link_full(link):
+    if not link.startswith('tg://proxy?'):
+        return link
+    server_match = re.search(r'server=([^&]+)', link)
+    if server_match:
+        server_raw = server_match.group(1)
+        server_clean = clean_server(server_raw)
+        if server_clean != server_raw:
+            link = link.replace(f'server={server_raw}', f'server={server_clean}')
+    return link
 
-TIMEOUT     = 2.0
-MAX_WORKERS = 100
+def get_latest_proxy_files():
+    ru_files = glob.glob("verified/*ru*.txt")
+    eu_files = glob.glob("verified/*eu*.txt")
+    all_files = glob.glob("verified/*all*.txt")
+    
+    latest_ru = max(ru_files, key=os.path.getctime) if ru_files else None
+    latest_eu = max(eu_files, key=os.path.getctime) if eu_files else None
+    latest_all = max(all_files, key=os.path.getctime) if all_files else None
+    
+    return latest_ru, latest_eu, latest_all
 
-RU_DOMAINS = [
-    '.ru', 'yandex', 'vk.com', 'mail.ru', 'ok.ru', 'dzen', 'rutube',
-    'sber', 'tinkoff', 'vtb', 'gosuslugi', 'nalog', 'mos.ru',
-    'ozon', 'wildberries', 'avito', 'kinopoisk', 'mts', 'beeline',
-]
-
-BLOCKED = [
-    'instagram', 'facebook', 'twitter', 'bbc',
-    'meduza', 'linkedin', 'torproject',
-]
-
-# ─────────────────────────── helpers ────────────────────────────
-
-def _valid_port(port_str: str) -> bool:
+def test_port_availability(server, port=443, timeout=3):
     try:
-        return 1 <= int(port_str) <= 65535
-    except (ValueError, TypeError):
+        start_time = time.time()
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(timeout)
+        result = sock.connect_ex((server, port))
+        sock.close()
+        if result == 0:
+            return True, (time.time() - start_time) * 1000
+        return False, None
+    except:
+        return False, None
+
+def test_stability(server, port=443, samples=2):
+    times = []
+    successes = 0
+    for i in range(samples):
+        available, response_time = test_port_availability(server, port, timeout=3)
+        if available:
+            successes += 1
+            times.append(response_time)
+        if i < samples - 1:
+            time.sleep(0.3)
+    if successes == 0:
+        return None, None, 100, []
+    avg_time = sum(times) / len(times)
+    if len(times) > 1:
+        jitter = statistics.stdev(times)
+    else:
+        jitter = 0
+    packet_loss = ((samples - successes) / samples) * 100
+    return avg_time, jitter, packet_loss, times
+
+def calculate_quality_score(avg_time, jitter, packet_loss):
+    if avg_time is None:
+        return 0
+    if avg_time < 100:
+        time_score = 40
+    elif avg_time < 200:
+        time_score = 35
+    elif avg_time < 300:
+        time_score = 30
+    elif avg_time < 400:
+        time_score = 25
+    else:
+        time_score = 20
+    if jitter < 30:
+        jitter_score = 35
+    elif jitter < 60:
+        jitter_score = 30
+    elif jitter < 100:
+        jitter_score = 25
+    else:
+        jitter_score = 20
+    if packet_loss < 5:
+        loss_score = 25
+    elif packet_loss < 10:
+        loss_score = 20
+    elif packet_loss < 15:
+        loss_score = 15
+    else:
+        loss_score = 10
+    return time_score + jitter_score + loss_score
+
+def validate_proxy_link(link):
+    try:
+        if not link.startswith('tg://proxy?'):
+            return False
+        return 'server=' in link and 'port=' in link and 'secret=' in link
+    except:
         return False
 
-def _is_blocked(secret: str, domain: str | None) -> bool:
-    if len(secret) < 16:
-        return True
-    if domain and any(b in domain for b in BLOCKED):
-        return True
-    return False
+def clean_proxy_link(link):
+    link = re.sub(r'\.{2,}', '.', link)
+    link = link.strip()
+    return link
 
-def _detect_region(domain: str | None) -> str:
-    if domain:
-        for marker in RU_DOMAINS:
-            if marker in domain:
-                return 'ru'
-    return 'eu'
-
-def _cleanup_telethon_session(host: str, port: int) -> None:
-    session_name = f'test_{host.replace(".", "_")}_{port}'
-    for path in glob.glob(f'{session_name}*'):
-        try:
-            os.remove(path)
-        except OSError:
-            pass
-
-# ─────────────────────────── parsing ────────────────────────────
-
-def get_proxies_from_text(text: str) -> set[tuple]:
-    proxies: set[tuple] = set()
-
-    tg_pattern = re.compile(
-        r'tg://proxy\?server=([^&\s]+)&port=(\d+)&secret=([A-Za-z0-9_=+/%-]+)',
-        re.IGNORECASE,
-    )
-    for h, p, s in tg_pattern.findall(text):
-        if _valid_port(p):
-            proxies.add((h, int(p), s))
-
-    tme_pattern = re.compile(
-        r't\.me/proxy\?server=([^&\s]+)&port=(\d+)&secret=([A-Za-z0-9_=+/%-]+)',
-        re.IGNORECASE,
-    )
-    for h, p, s in tme_pattern.findall(text):
-        if _valid_port(p):
-            proxies.add((h, int(p), s))
-
-    simple_pattern = re.compile(r'([a-zA-Z0-9.-]+):(\d+):([A-Fa-f0-9]{16,})')
-    for h, p, s in simple_pattern.findall(text):
-        if _valid_port(p):
-            proxies.add((h, int(p), s))
-
-    txt = text.strip()
-    if txt.startswith('[') or txt.startswith('{'):
-        try:
-            data = json.loads(txt)
-            if isinstance(data, list):
-                for item in data:
-                    if isinstance(item, dict):
-                        host   = item.get('host') or item.get('server')
-                        port   = item.get('port')
-                        secret = item.get('secret')
-                        if host and port and secret and _valid_port(str(port)):
-                            proxies.add((host, int(port), str(secret)))
-        except Exception:
-            pass
-
+def extract_proxies_from_file(file_path, proxy_type):
+    proxies = []
+    if not file_path or not os.path.exists(file_path):
+        return proxies
+    
+    if 'ru' in file_path.lower():
+        real_type = '🇷🇺 RU'
+    elif 'eu' in file_path.lower():
+        real_type = '🇪🇺 EU'
+    else:
+        real_type = '🌍 ALL'
+    
+    print(f"\n📊 Проверка {real_type}: {os.path.basename(file_path)}")
+    
+    with open(file_path, 'r') as f:
+        content = f.read()
+    
+    lines = [line.strip() for line in content.split('\n') if 'tg://proxy' in line]
+    total = len(lines)
+    checked = min(total, CHECK_LIMIT)
+    print(f"   Всего: {total}, проверяем: {checked}")
+    
+    validated = 0
+    for i, line in enumerate(lines[:CHECK_LIMIT], 1):
+        clean_link = clean_proxy_link(line)
+        if not validate_proxy_link(clean_link):
+            continue
+        clean_link = clean_proxy_link_full(clean_link)
+        
+        proxy_info = {'link': clean_link, 'type': real_type}
+        server_match = re.search(r'server=([^&]+)', clean_link)
+        if not server_match:
+            continue
+        proxy_info['server'] = server_match.group(1)
+        port_match = re.search(r'port=(\d+)', clean_link)
+        proxy_info['port'] = int(port_match.group(1)) if port_match else 443
+        
+        avg_time, jitter, packet_loss, _ = test_stability(proxy_info['server'], proxy_info['port'])
+        if avg_time is None or avg_time > MAX_PING or jitter > MAX_JITTER or packet_loss > MAX_PACKET_LOSS:
+            continue
+        
+        proxy_info['ping'] = avg_time
+        proxy_info['jitter'] = jitter
+        proxy_info['packet_loss'] = packet_loss
+        proxy_info['quality_score'] = calculate_quality_score(avg_time, jitter, packet_loss)
+        proxies.append(proxy_info)
+        validated += 1
+        
+        if SHOW_PROGRESS and i % 10 == 0:
+            print(f"      Прогресс: {i}/{checked}, найдено: {validated}")
+    
+    print(f"\n   📊 ИТОГ: ✅ {validated} стабильных")
     return proxies
 
-def decode_domain(secret: str) -> str | None:
-    if not secret.startswith('ee'):
-        return None
-    try:
-        chars = []
-        for i in range(2, len(secret) - 1, 2):
-            val = int(secret[i:i + 2], 16)
-            if val == 0:
-                break
-            if 32 <= val <= 126:
-                chars.append(chr(val))
-        result = ''.join(chars).lower()
-        return result if result else None
-    except Exception:
-        return None
-
-# ──────────────────────── source fetching ───────────────────────
-
-def fetch_source(url: str, timeout: int = 15) -> str:
-    for attempt in range(3):
-        try:
-            r = requests.get(url, timeout=timeout)
-            if r.status_code == 200:
-                return r.text
-        except Exception:
-            pass
-        time.sleep(0.5 * (attempt + 1))
-    return ''
-
-# ─────────────────────────── checkers ───────────────────────────
-
-async def check_proxy_telethon(p: tuple) -> dict | None:
-    if not TELETHON_AVAILABLE or not API_ID or not API_HASH:
-        return None
-
-    host, port, secret = p
-    domain = decode_domain(secret)
-
-    if _is_blocked(secret, domain):
-        return None
-
-    client = TelegramClient(
-        f'test_{host.replace(".", "_")}_{port}', API_ID, API_HASH,
-        connection=ConnectionTcpMTProxyRandomizedIntermediate,
-        proxy=(host, int(port), secret),
-        timeout=8.0,
-    )
-    try:
-        start = time.time()
-        await client.connect()
-        await client.get_config()
-        ping = round(time.time() - start, 3)
-        return {
-            'host': host, 'port': port, 'secret': secret,
-            'link': f'tg://proxy?server={host}&port={port}&secret={secret}',
-            'ping': ping, 'region': _detect_region(domain),
-            'domain': domain or '', 'method': 'Telethon_OK',
-        }
-    except Exception:
-        return None
-    finally:
-        try:
-            await client.disconnect()
-        except Exception:
-            pass
-        _cleanup_telethon_session(host, port)
-
-def check_proxy_tcp(p: tuple) -> dict | None:
-    host, port, secret = p
-    domain = decode_domain(secret)
-
-    if _is_blocked(secret, domain):
-        return None
-
-    try:
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.settimeout(TIMEOUT)
-            start = time.time()
-            s.connect((host, port))
-            ping = round(time.time() - start, 3)
-    except Exception:
-        return None
-
-    return {
-        'host': host, 'port': port, 'secret': secret,
-        'link': f'tg://proxy?server={host}&port={port}&secret={secret}',
-        'ping': ping, 'region': _detect_region(domain),
-        'domain': domain or '', 'method': 'TCP_OK',
-    }
-
-# ─────────────────────────── postprocess ────────────────────────
-
-def deduplicate_by_host_port(proxies: list[dict]) -> list[dict]:
-    best: dict[tuple, dict] = {}
+def save_proxies_to_file(proxies, filename="best_proxies.txt"):
+    seen_servers = set()
+    unique_proxies = []
     for p in proxies:
-        key = (p['host'], p['port'])
-        if key not in best or p['ping'] < best[key]['ping']:
-            best[key] = p
-    return list(best.values())
-
-def make_tme_link(host: str, port: int, secret: str) -> str:
-    return f'https://t.me/proxy?server={host}&port={port}&secret={secret}'
-
-# ─────────────────────────── main ───────────────────────────────
-
-async def main_async(args: argparse.Namespace) -> None:
-    start_time = time.time()
-    print('🚀 MTProto Proxy Collector v2.1')
-    print('=' * 48)
-
-    output_dir = args.output_dir
-    os.makedirs(output_dir, exist_ok=True)
-
-    print('\n📥 Сбор прокси из источников...\n')
-    all_raw: set[tuple] = set()
-
-    for url in SOURCES:
-        name = (url.split('/')[-1] or url.split('/')[-2])[:42]
-        text = fetch_source(url)
-        if text:
-            extracted = get_proxies_from_text(text)
-            all_raw.update(extracted)
-            print(f'  ✓ {name:<42} +{len(extracted)}')
-        else:
-            print(f'  ✗ {name:<42} недоступен')
-
-    print(f'\n  Уникальных прокси: {len(all_raw)}\n')
-
-    print(f'⚡ Проверка {len(all_raw)} прокси...\n')
-
-    valid:   list[dict] = []
-    checked: int        = 0
-    total:   int        = len(all_raw)
-
-    if TELETHON_AVAILABLE and API_ID and API_HASH:
-        print('🔥 Режим: Telethon MTProto\n')
-        semaphore = asyncio.Semaphore(10)
-
-        async def check_p(p: tuple) -> dict | None:
-            async with semaphore:
-                return await check_proxy_telethon(p)
-
-        tasks = [asyncio.ensure_future(check_p(p)) for p in all_raw]
-        for coro in asyncio.as_completed(tasks):
-            result = await coro
-            checked += 1
-            if result:
-                valid.append(result)
-            if checked % 50 == 0 or checked == total:
-                print(f'  [{checked}/{total}] {checked / total * 100:.0f}% | найдено: {len(valid)}')
-
-    else:
-        print('📡 Режим: TCP ping\n')
-        with concurrent.futures.ThreadPoolExecutor(max_workers=args.workers) as exc:
-            futures = {exc.submit(check_proxy_tcp, p): p for p in all_raw}
-            for f in concurrent.futures.as_completed(futures):
-                result = f.result()
-                checked += 1
-                if result:
-                    valid.append(result)
-                if checked % 100 == 0 or checked == total:
-                    print(f'  [{checked}/{total}] {checked / total * 100:.0f}% | найдено: {len(valid)}')
-
-    valid = deduplicate_by_host_port(valid)
-    ru    = sorted([x for x in valid if x['region'] == 'ru'], key=lambda x: x['ping'])
-    eu    = sorted([x for x in valid if x['region'] == 'eu'], key=lambda x: x['ping'])
-
-    top_n = args.top if args.top > 0 else None
-
-    print(f'\n💾 Сохранение в {output_dir}/...\n')
-
-    region_files: dict[str, list[dict]] = {
-        f'{output_dir}/proxy_ru_verified.txt':  ru,
-        f'{output_dir}/proxy_eu_verified.txt':  eu,
-        f'{output_dir}/proxy_all_verified.txt': valid,
-    }
-
-    for filename, proxies_list in region_files.items():
-        region_label = 'RU' if 'ru' in filename else 'EU' if 'eu' in filename else 'All'
-        chunk = proxies_list[:top_n]
-        with open(filename, 'w', encoding='utf-8') as f:
-            f.write(f'# Verified {region_label} Proxies ({len(chunk)})\n')
-            f.write(f'# Updated: {datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")}\n')
-            if chunk:
-                f.write(f'# Method: {chunk[0]["method"]}\n')
-                f.write(f'# Best ping: {chunk[0]["ping"]}s\n')
-            f.write('\n')
-            f.write('\n'.join(x['link'] for x in chunk))
-
-    tme_chunk = valid[:top_n]
-    with open(f'{output_dir}/proxy_all_tme_verified.txt', 'w', encoding='utf-8') as f:
-        f.write(f'# Verified Proxies t.me format ({len(tme_chunk)})\n')
-        f.write(f'# Updated: {datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")}\n\n')
-        for x in tme_chunk:
-            f.write(make_tme_link(x['host'], x['port'], x['secret']) + '\n')
-
-    json_chunk = valid[:top_n]
-    with open(f'{output_dir}/proxy_all_verified.json', 'w', encoding='utf-8') as f:
-        json.dump(json_chunk, f, indent=2, ensure_ascii=False)
-
-    elapsed = round(time.time() - start_time, 1)
-    stats = {
-        'timestamp_utc':   datetime.utcnow().isoformat(),
-        'total_raw':       len(all_raw),
-        'total_verified':  len(valid),
-        'ru_count':        len(ru),
-        'eu_count':        len(eu),
-        'telethon_used':   TELETHON_AVAILABLE and bool(API_ID and API_HASH),
-        'best_ru_ping':    ru[0]['ping'] if ru else None,
-        'best_eu_ping':    eu[0]['ping'] if eu else None,
-        'execution_time':  elapsed,
-        'sources_count':   len(SOURCES),
-        'workers':         args.workers,
-    }
-    with open(f'{output_dir}/proxy_stats_verified.json', 'w', encoding='utf-8') as f:
-        json.dump(stats, f, indent=2, ensure_ascii=False)
-
-    print('=' * 48)
-    print(f'✅  Верифицировано: RU={len(ru)}  EU={len(eu)}  Всего={len(valid)}')
-    if ru:
-        print(f'🏆  Лучший RU: {ru[0]["host"]}:{ru[0]["port"]}  ({ru[0]["ping"]}s)')
-    if eu:
-        print(f'🏆  Лучший EU: {eu[0]["host"]}:{eu[0]["port"]}  ({eu[0]["ping"]}s)')
-    print(f'📁  Результаты: {output_dir}/')
-    print(f'⏱️   Время:      {elapsed}s')
-    print('=' * 48)
-
-def main() -> None:
-    parser = argparse.ArgumentParser(description='🚀 MTProto Proxy Collector v2.1')
-    parser.add_argument('--timeout',    type=float, default=2.0,        help='TCP таймаут (сек)')
-    parser.add_argument('--workers',    type=int,   default=100,         help='Потоки TCP проверки')
-    parser.add_argument('--top',        type=int,   default=0,           help='Сохранить TOP N быстрейших (0 = все)')
-    parser.add_argument('--output-dir', type=str,   default='verified',  help='Папка для результатов')
-    args = parser.parse_args()
-
-    global TIMEOUT
-    TIMEOUT = args.timeout
-
-    asyncio.run(main_async(args))
-
-if __name__ == '__main__':
-    main()
+        if p['server'] not in seen_servers:
+            seen_servers.add(p['server'])
+            if 'link' in p:
+                p['link'] = clean_proxy_link_full(p['link'])
+            unique_proxies.append(p)
+    
+    unique_proxies.sort(key=lambda x: x.get('quality_score', 0), reverse=True)
+    
+    ru_proxies = [p for p in unique_proxies if 'RU' in p['type']]
+    eu_proxies = [p for p in unique_proxies if 'EU' in p['type']]
+    ru_top = ru_proxies[:5]
+    eu_top = eu_proxies[:5]
+    
+    final_proxies = []
+    for i in range(max(len(ru_top), len(eu_top))):
+        if i < len(ru_top):
+            final_proxies.append(ru_top[i])
+        if i < len(eu_top):
+            final_proxies.append(eu_top[i])
+    final_proxies = final_proxies[:10]
+    
+    with open(filename, 'w') as f:
+        f.write(f"# Лучшие прокси от {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+        f.write(f"# Всего: {len(unique_proxies)} (RU: {len(ru_proxies)}, EU: {len(eu_proxies)})\n\n")
+        for i, p in enumerate(final_proxies, 1):
+            stats = f"п:{p['ping']:.0f}мс дж:{p['jitter']:.0f}мс пот:{p['packet_loss']:.0f}%"
+            f.write(f"# {i}. {p['type']} {p['server']} — {stats}\n")
+            f.write(f"{p['link']}\n\n")
+    
+    with open('best_proxies.json', 'w', encoding='utf-8') as f:
+        json.dump(final_proxies, f, ensure_ascii=False, indent=2)
+    print(f"💾 Сохранено в best_proxies.json")
+    
+    return final_proxies
