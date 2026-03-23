@@ -376,6 +376,7 @@ def test_proxy_stability(server, port, level='strict'):
     
     return avg_ping, jitter, loss_percent, meets_criteria, download_speed
 
+
 def advanced_final_check(proxies, progress_callback=None):
     """Оптимизированная проверка стабильности с приоритетом RU прокси"""
     print("\n" + "="*70)
@@ -391,35 +392,57 @@ def advanced_final_check(proxies, progress_callback=None):
         progress_callback("Быстрый отбор...", 0, len(proxies[:30]))
     
     quick_pass = []
+    ru_quick_count = 0
+    eu_quick_count = 0
+    
     for i, p in enumerate(proxies[:30], 1):
         if progress_callback:
             progress_callback(f"Быстрый отбор: {p['server']}", i, len(proxies[:30]))
         
         if 'link' not in p:
             continue
+        
+        # Определяем регион
+        is_ru = 'RU' in p.get('type', '') or p.get('country') == 'RU'
+        
         port_match = re.search(r'port=(\d+)', p['link'])
         port = int(port_match.group(1)) if port_match else 443
         _, _, _, passed, _ = test_proxy_stability(p['server'], port, level='quick')
+        
         if passed:
             quick_pass.append(p)
+            if is_ru:
+                ru_quick_count += 1
+                print(f"   ✅ RU прокси прошел быстрый отбор: {p['server']}")
+            else:
+                eu_quick_count += 1
+        else:
+            if is_ru:
+                print(f"   ❌ RU прокси НЕ прошел быстрый отбор: {p['server']}")
     
-    print(f"\n✅ Быстрый отбор: {len(quick_pass)} прокси")
+    print(f"\n✅ Быстрый отбор: {len(quick_pass)} прокси (RU: {ru_quick_count}, EU: {eu_quick_count})")
     
     if len(quick_pass) < 3:
         return quick_pass[:5]
     
     # Этап 2: Жесткий отбор (5 замеров)
     if progress_callback:
-        progress_callback("Жесткий отбор...", 0, len(quick_pass[:15]))  # Увеличил до 15
+        progress_callback("Жесткий отбор...", 0, len(quick_pass[:15]))
     
     strict_pass = []
+    ru_strict_count = 0
+    eu_strict_count = 0
+    
     for i, p in enumerate(quick_pass[:15], 1):
         if progress_callback:
             progress_callback(f"Жесткий отбор: {p['server']}", i, len(quick_pass[:15]))
         
+        is_ru = 'RU' in p.get('type', '') or p.get('country') == 'RU'
+        
         port_match = re.search(r'port=(\d+)', p['link'])
         port = int(port_match.group(1)) if port_match else 443
         avg_ping, jitter, loss, passed, download_speed = test_proxy_stability(p['server'], port, level='strict')
+        
         if passed:
             quality_score = ((300 - min(avg_ping, 300)) * 0.4 + (100 - min(jitter, 100)) * 0.35 + (100 - loss) * 0.25)
             p['quality_score'] = quality_score
@@ -427,8 +450,17 @@ def advanced_final_check(proxies, progress_callback=None):
             if download_speed:
                 p['download_speed'] = download_speed
             strict_pass.append(p)
+            
+            if is_ru:
+                ru_strict_count += 1
+                print(f"   ✅ RU прокси прошел жесткий отбор: {p['server']} (пинг={avg_ping:.0f}мс)")
+            else:
+                eu_strict_count += 1
+        else:
+            if is_ru:
+                print(f"   ❌ RU прокси НЕ прошел жесткий отбор: {p['server']} (пинг={avg_ping:.0f}мс, потери={loss:.0f}%)")
     
-    print(f"\n✅ Жесткий отбор: {len(strict_pass)} прокси")
+    print(f"\n✅ Жесткий отбор: {len(strict_pass)} прокси (RU: {ru_strict_count}, EU: {eu_strict_count})")
     
     # Разделяем по странам с приоритетом RU
     ru_proxies = [p for p in strict_pass if 'RU' in p.get('type', '') or p.get('country') == 'RU']
@@ -438,9 +470,13 @@ def advanced_final_check(proxies, progress_callback=None):
     ru_proxies.sort(key=lambda x: x.get('quality_score', 0), reverse=True)
     eu_proxies.sort(key=lambda x: x.get('quality_score', 0), reverse=True)
     
-    print(f"\n📊 Найдено:")
+    print(f"\n📊 Найдено после сортировки:")
     print(f"   🇷🇺 RU прокси: {len(ru_proxies)}")
+    for p in ru_proxies[:5]:
+        print(f"      - {p['server']} (качество={p.get('quality_score', 0):.0f})")
     print(f"   🇪🇺 EU прокси: {len(eu_proxies)}")
+    for p in eu_proxies[:5]:
+        print(f"      - {p['server']} (качество={p.get('quality_score', 0):.0f})")
     
     # Формируем финальный список: сначала RU (до 5), потом EU (до 5)
     final_proxies = []
@@ -448,11 +484,13 @@ def advanced_final_check(proxies, progress_callback=None):
     # Добавляем RU прокси (до 5 штук)
     for i in range(min(len(ru_proxies), 5)):
         final_proxies.append(ru_proxies[i])
+        print(f"   ✅ Добавлен RU #{i+1}: {ru_proxies[i]['server']}")
     
     # Добавляем EU прокси (до 5 штук, но не больше 10 всего)
     remaining_slots = 10 - len(final_proxies)
     for i in range(min(len(eu_proxies), remaining_slots)):
         final_proxies.append(eu_proxies[i])
+        print(f"   ➕ Добавлен EU #{i+1}: {eu_proxies[i]['server']}")
     
     print(f"\n🏆 ИТОГО: {len(final_proxies)} прокси")
     print(f"   🇷🇺 RU: {min(len(ru_proxies), 5)}")
