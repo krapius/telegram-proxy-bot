@@ -40,11 +40,8 @@ def clean_server(server):
     """Очищает имя сервера от недопустимых символов"""
     if not server:
         return server
-    # Удаляем точку в конце
     server = server.rstrip('.')
-    # Удаляем пробелы
     server = server.strip()
-    # Удаляем http:// или https:// если есть
     server = re.sub(r'^https?://', '', server)
     return server
 
@@ -53,7 +50,6 @@ def clean_proxy_link_full(link):
     if not link.startswith('tg://proxy?'):
         return link
     
-    # Очищаем server
     server_match = re.search(r'server=([^&]+)', link)
     if server_match:
         server_raw = server_match.group(1)
@@ -61,7 +57,6 @@ def clean_proxy_link_full(link):
         if server_clean != server_raw:
             link = link.replace(f'server={server_raw}', f'server={server_clean}')
     
-    # Раскодируем secret (URL-кодирование)
     secret_match = re.search(r'secret=([^&]+)', link)
     if secret_match:
         secret_raw = secret_match.group(1)
@@ -169,14 +164,9 @@ class VPNContext:
         if self.debug:
             time.sleep(1)
             print(f"📊 VPN после: {get_vpn_status()}")
-# ===== КОНЕЦ ФУНКЦИЙ VPN =====
 
 # ===== ФУНКЦИИ ПРОВЕРКИ СТАБИЛЬНОСТИ =====
 def test_telegram_ping(server, port, timeout=5):
-    """
-    Проверяет реальное время отклика Telegram через прокси
-    Возвращает время в мс или None если недоступен
-    """
     test_url = f"https://api.telegram.org/bot{TOKEN}/getMe"
     
     try:
@@ -205,7 +195,6 @@ def test_telegram_ping(server, port, timeout=5):
         return None
 
 def test_proxy_stability(server, port, level='quick'):
-    """Проверяет стабильность прокси с TCP и реальным Telegram ping"""
     if level == 'quick':
         samples = 2
         max_ping = 400
@@ -220,7 +209,6 @@ def test_proxy_stability(server, port, level='quick'):
     pings = []
     losses = 0
     
-    # TCP-тест
     for i in range(samples):
         try:
             start = time.time()
@@ -250,7 +238,6 @@ def test_proxy_stability(server, port, level='quick'):
     else:
         jitter = 0
     
-    # Реальный Telegram ping
     telegram_ping = test_telegram_ping(server, port, timeout=5)
     
     if level == 'strict':
@@ -370,7 +357,6 @@ def clean_proxy_link(link):
     link = link.strip()
     return link
 
-
 def extract_proxies_from_file(file_path, proxy_type):
     proxies = []
     
@@ -409,7 +395,6 @@ def extract_proxies_from_file(file_path, proxy_type):
         if not validate_proxy_link(clean_link):
             continue
         
-        # ПОЛНАЯ ОЧИСТКА ССЫЛКИ (сервер + secret)
         clean_link = clean_proxy_link_full(clean_link)
         
         proxy_info['link'] = clean_link
@@ -475,7 +460,6 @@ def extract_proxies_from_file(file_path, proxy_type):
     return proxies
 
 def advanced_final_check(proxies, progress_callback=None):
-    """Оптимизированная проверка стабильности с приоритетом RU прокси"""
     print("\n" + "="*70)
     print("🔬 ПРОВЕРКА СТАБИЛЬНОСТИ")
     print("="*70)
@@ -484,7 +468,6 @@ def advanced_final_check(proxies, progress_callback=None):
         print("❌ Нет прокси для проверки")
         return []
     
-    # Быстрый отбор
     quick_pass = []
     ru_quick_count = 0
     
@@ -509,7 +492,6 @@ def advanced_final_check(proxies, progress_callback=None):
     if len(quick_pass) < 3:
         return quick_pass[:5]
     
-    # Жесткий отбор
     strict_pass = []
     ru_strict_count = 0
     
@@ -534,7 +516,6 @@ def advanced_final_check(proxies, progress_callback=None):
     
     print(f"\n✅ Жесткий отбор: {len(strict_pass)} прокси (RU: {ru_strict_count})")
     
-    # Разделяем по странам
     ru_proxies = [p for p in strict_pass if 'RU' in p.get('type', '') or p.get('country') == 'RU']
     eu_proxies = [p for p in strict_pass if 'EU' in p.get('type', '') or p.get('country') not in ['RU', None]]
     
@@ -543,7 +524,6 @@ def advanced_final_check(proxies, progress_callback=None):
     
     print(f"\n📊 RU прокси: {len(ru_proxies)}, EU прокси: {len(eu_proxies)}")
     
-    # Формируем финальный список
     final_proxies = []
     for i in range(min(len(ru_proxies), 5)):
         final_proxies.append(ru_proxies[i])
@@ -553,7 +533,6 @@ def advanced_final_check(proxies, progress_callback=None):
     print(f"\n🏆 ИТОГО: {len(final_proxies)} прокси (RU: {min(len(ru_proxies), 5)})")
     return final_proxies[:10]
 
-
 def save_proxies_to_file(proxies, filename="best_proxies.txt"):
     seen_servers = set()
     unique_proxies = []
@@ -561,7 +540,6 @@ def save_proxies_to_file(proxies, filename="best_proxies.txt"):
     for p in proxies:
         if p['server'] not in seen_servers:
             seen_servers.add(p['server'])
-            # Дополнительная очистка ссылки перед сохранением
             if 'link' in p:
                 p['link'] = clean_proxy_link_full(p['link'])
             unique_proxies.append(p)
@@ -585,7 +563,6 @@ def save_proxies_to_file(proxies, filename="best_proxies.txt"):
     
     final_proxies = final_proxies[:10]
     
-    # Сохраняем в TXT
     with open(filename, 'w') as f:
         f.write(f"# Лучшие прокси от {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
         f.write(f"# Всего найдено: {len(unique_proxies)} (RU: {len(ru_proxies)}, EU: {len(eu_proxies)})\n")
@@ -605,187 +582,10 @@ def save_proxies_to_file(proxies, filename="best_proxies.txt"):
                 f.write(f"# {i}. {p['type']} {quality} {p['server']} — {stats} | {mask}\n")
             else:
                 f.write(f"# {i}. {p['type']} {quality} {p['server']} — {stats}\n")
-            # Ссылка уже очищена
             f.write(f"{p['link']}\n\n")
     
-    # Сохраняем также в JSON с полными данными
     with open('best_proxies.json', 'w', encoding='utf-8') as f:
         json.dump(final_proxies, f, ensure_ascii=False, indent=2)
     print(f"💾 Сохранено в best_proxies.json")
     
     return final_proxies
-
-def main():
-    start_time = time.time()
-    
-    print("🔄 Запуск обновления прокси...")
-    
-    # Отправляем начальное сообщение (будет удалено через 2 секунды)
-    start_message_id = send_message("🔄 <b>Обновление прокси начато!</b>\n\nЭто займёт 1-2 минуты...\nРезультат появится здесь автоматически.")
-    
-    # Небольшая пауза, чтобы сообщение успело отобразиться
-    time.sleep(0.1)
-    
-    # Отправляем сообщение с прогрессом
-    progress_message_id = send_message("🔄 <b>Запуск обновления прокси...</b>")
-    if not progress_message_id:
-        print("❌ Не удалось отправить начальное сообщение")
-        return
-    
-    # Удаляем стартовое сообщение
-    if start_message_id:
-        delete_message(start_message_id)
-    
-    # Этап 1: Подготовка
-    update_progress(progress_message_id, 1, "Подготовка...", 1, 1, start_time)
-    time.sleep(0.5)
-    update_progress(progress_message_id, 1, "Готов к работе", 1, 1, start_time)
-    
-    # Этап 2: main.py
-    print("📦 Запуск main.py...")
-    update_progress(progress_message_id, 2, "Запуск сбора прокси...", 0, 1, start_time)
-    
-    process = subprocess.Popen(
-        ['python3', 'main.py'],
-        cwd=os.path.dirname(__file__),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        bufsize=1
-    )
-    
-    last_percent = 0
-    total_proxies = 0
-    
-    while True:
-        line = process.stdout.readline()
-        if not line and process.poll() is not None:
-            break
-        if line:
-            match = re.search(r'\[(\d+)/(\d+)\]', line)
-            if match:
-                checked = int(match.group(1))
-                total = int(match.group(2))
-                percent = int(checked * 100 / total) if total > 0 else 0
-                if percent >= last_percent + 2 or percent == 100:
-                    last_percent = percent
-                    update_progress(progress_message_id, 2, f"Сбор прокси... {percent}%", percent, 100, start_time, total_proxies)
-            
-            match = re.search(r'RU=(\d+)\s+EU=(\d+)', line)
-            if match:
-                ru = int(match.group(1))
-                eu = int(match.group(2))
-                total_proxies = ru + eu
-                update_progress(progress_message_id, 2, f"Найдено {total_proxies} прокси", 100, 100, start_time, total_proxies)
-    
-    process.wait(timeout=10)
-    print("✅ main.py завершён")
-    
-    # Этап 3: test_proxies.py
-    print("📊 Запуск test_proxies.py...")
-    update_progress(progress_message_id, 3, "TCP-тестирование...", 0, 100, start_time, total_proxies)
-    
-    process = subprocess.Popen(
-        ['python3', 'test_proxies.py'],
-        cwd=os.path.dirname(__file__),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        bufsize=1
-    )
-    
-    last_percent = 0
-    tested = 0
-    total_to_test = max(total_proxies, 50)
-    
-    while True:
-        line = process.stdout.readline()
-        if not line and process.poll() is not None:
-            break
-        if line and 'Проверка' in line and ':' in line:
-            tested += 1
-            percent = int(tested * 100 / total_to_test) if total_to_test > 0 else 0
-            if percent >= last_percent + 10 or percent == 100:
-                last_percent = percent
-                update_progress(progress_message_id, 3, f"TCP-тестирование... {percent}% ({tested}/{total_to_test})", percent, 100, start_time, total_proxies)
-    
-    process.wait(timeout=10)
-    print("✅ test_proxies.py завершён")
-    
-    # Парсим результат
-    proxies = parse_proxies_from_file()
-    total_proxies_found = len(proxies)
-    
-    update_progress(progress_message_id, 3, f"Найдено {total_proxies_found} стабильных", 100, 100, start_time, total_proxies_found)
-    
-    # Этап 4: Анализ (имитация)
-    update_progress(progress_message_id, 4, "Анализ стабильности...", 0, 100, start_time, total_proxies_found)
-    
-    for i in range(1, min(total_proxies_found, 100) + 1):
-        if i % max(1, total_proxies_found // 10) == 0:
-            percent = int(i * 100 / total_proxies_found) if total_proxies_found > 0 else 0
-            update_progress(progress_message_id, 4, f"Анализ прокси {i}/{total_proxies_found}", percent, 100, start_time, total_proxies_found)
-        time.sleep(0.05)
-    
-    update_progress(progress_message_id, 4, f"Отобрано {total_proxies_found} лучших", 100, 100, start_time, total_proxies_found)
-    
-    # Этап 5: Проверка
-    update_progress(progress_message_id, 5, "Проверка соединения...", 100, 100, start_time, total_proxies_found)
-    time.sleep(1)
-    
-    # Этап 6: Подготовка и отправка
-    update_progress(progress_message_id, 6, "Формирую список...", 100, 100, start_time, total_proxies_found)
-    
-    # Отправляем в Worker
-    print(f"📤 Отправка {len(proxies)} прокси в Worker...")
-    try:
-        response = httpx.post(
-            f"{WORKER_URL}/update",
-            json={"proxies": proxies},
-            timeout=30
-        )
-        if response.status_code == 200:
-            print(f"✅ Отправлено {len(proxies)} прокси в Worker")
-            
-            # Просим Worker отправить сообщение в канал (имитируем webhook с командой /start)
-            print(f"📨 Запрашиваем отправку сообщения в канал...")
-            try:
-                # Имитируем сообщение от пользователя с командой /start
-                fake_update = {
-                    "message": {
-                        "chat": {"id": int(CHAT_ID)},
-                        "text": "/start"
-                    }
-                }
-                channel_response = httpx.post(
-                    f"{WORKER_URL}",
-                    json=fake_update,
-                    timeout=30
-                )
-                if channel_response.status_code == 200:
-                    print(f"✅ Сообщение отправлено в канал")
-                else:
-                    print(f"⚠️ Ошибка отправки сообщения: {channel_response.status_code}")
-            except Exception as e:
-                print(f"⚠️ Не удалось отправить сообщение: {e}")
-    except Exception as e:
-        print(f"❌ Ошибка отправки: {e}")
-    
-    time.sleep(0.5)
-    
-    # Удаляем сообщение с прогрессом
-    delete_message(progress_message_id)
-    
-    # Отправляем финальный результат (закомментировано, используем Worker)
-    # send_final_result(proxies)
-    print("🎉 Обновление завершено!")
-
-if __name__ == "__main__":
-    try:
-        main()
-    except KeyboardInterrupt:
-        print("\n\n👋 Пока!")
-    except Exception as e:
-        print(f"\n❌ Ошибка: {e}")
-        import traceback
-        traceback.print_exc()
