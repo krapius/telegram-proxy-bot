@@ -17,8 +17,7 @@ from datetime import datetime
 from test_proxies import (
     get_latest_proxy_files, 
     extract_proxies_from_file, 
-    save_proxies_to_file,
-    advanced_final_check
+    save_proxies_to_file
 )
 
 BOT_TOKEN = os.environ.get('BOT_TOKEN', '8664454935:AAFPk1ehMIJB1r9MrDRTrb9JDtpHYjg1Vjc')
