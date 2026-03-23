@@ -893,6 +893,8 @@ class ProgressBot:
             self.current_message_id = None
             self.current_chat_id = None
 
+
+
     async def send_proxy_list_result(self, chat_id, message_id, proxies):
         now = datetime.now().strftime("%d.%m %H:%M")
         text = f"<b>🔥 Лучшие прокси SAMOLET на {now}</b>\n\n"
@@ -915,11 +917,21 @@ class ProgressBot:
                         await self.send_message(chat_id, text, parse_mode='HTML', reply_markup=keyboard)
             return
         
-        for i, p in enumerate(proxies[:6], 1):
-            flag = p.get('flag', '🇷🇺' if 'RU' in p.get('type', '') else '🇪🇺')
+        # Показываем до 10 прокси
+        for i, p in enumerate(proxies[:10], 1):
+            # Правильно определяем флаг
+            type_val = p.get('type', '')
+            flag = p.get('flag', '')
+            
+            if flag == '🇷🇺' or 'RU' in type_val:
+                flag_emoji = "🇷🇺"
+            elif flag == '🇪🇺' or 'EU' in type_val:
+                flag_emoji = "🇪🇺"
+            else:
+                flag_emoji = "🌍"
+            
             stats = p.get('strict_stats', {})
             ping = stats.get('ping', p.get('ping', 0))
-            speed = p.get('download_speed', 0)
             
             if ping and ping < 100:
                 quality = "🚀"
@@ -930,16 +942,10 @@ class ProgressBot:
             else:
                 quality = "❓"
             
-            if ping and speed:
-                text += f"{flag} {quality} <b>Прокси #{i}</b> — {ping:.0f}мс | {speed:.0f} КБ/с\n"
-            elif ping:
-                text += f"{flag} {quality} <b>Прокси #{i}</b> — {ping:.0f}мс\n"
-            else:
-                text += f"{flag} {quality} <b>Прокси #{i}</b>\n"
+            text += f"{flag_emoji} {quality} <b>Прокси #{i}</b> — {ping:.0f}мс\n"
             text += f"<code>{p['link']}</code>\n\n"
         
         text += f"\n🔄 <i>Обновляется автоматически каждые 6 часов</i>"
-        text += f"\n📊 <i>🚀 &lt;100мс — отлично | ✅ 100-200мс — хорошо | ⚠️ &gt;200мс — медленно</i>"
         
         keyboard = create_proxy_buttons(proxies[:10])
         try:
@@ -955,6 +961,7 @@ class ProgressBot:
                     await self.edit_message_text(chat_id, message_id, text, parse_mode='HTML', reply_markup=keyboard)
                 except:
                     await self.send_message(chat_id, text, parse_mode='HTML', reply_markup=keyboard)
+
 
     async def process_update(self, update):
         try:

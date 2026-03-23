@@ -1,29 +1,99 @@
 // Telegram Proxy Bot - Cloudflare Worker
-// Полная версия с логированием и KV Storage
+// Версия с кнопками, эндпоинтом /proxies и передачей chat_id в GitHub Actions
 
-async function sendMessage(chatId, text, botToken) {
+async function sendMessage(chatId, text, botToken, replyMarkup = null) {
   const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
-  const body = JSON.stringify({
+  console.log(`📤 Отправка в чат ${chatId}, текст: ${text.substring(0, 50)}...`);
+  
+  const body = {
     chat_id: chatId,
     text: text,
     parse_mode: "HTML",
     disable_web_page_preview: true
-  });
+  };
+  if (replyMarkup) {
+    body.reply_markup = replyMarkup;
+  }
+  
   try {
     const response = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body
+      body: JSON.stringify(body)
     });
-    return await response.json();
+    const result = await response.json();
+    console.log(`📥 Ответ от Telegram: ${JSON.stringify(result)}`);
+    return result;
   } catch (err) {
     console.error("Ошибка sendMessage:", err);
     return null;
   }
 }
 
-async function sendProxiesList(chatId, env) {
-  console.log(`📤 sendProxiesList для чата ${chatId}`);
+async function editMessageText(chatId, messageId, text, botToken, replyMarkup = null) {
+  const url = `https://api.telegram.org/bot${botToken}/editMessageText`;
+  const body = {
+    chat_id: chatId,
+    message_id: messageId,
+    text: text,
+    parse_mode: "HTML"
+  };
+  if (replyMarkup) {
+    body.reply_markup = replyMarkup;
+  }
+  
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+    return await response.json();
+  } catch (err) {
+    console.error("Ошибка editMessageText:", err);
+    return null;
+  }
+}
+
+async function answerCallbackQuery(callbackQueryId, text, botToken) {
+  const url = `https://api.telegram.org/bot${botToken}/answerCallbackQuery`;
+  try {
+    await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        callback_query_id: callbackQueryId,
+        text: text || "🔄 Обновляю..."
+      })
+    });
+  } catch (err) {
+    console.error("Ошибка answerCallbackQuery:", err);
+  }
+}
+
+function createProxyButtons(proxies) {
+  console.log("📋 Создаю кнопки для прокси:", JSON.stringify(proxies));
+  const keyboard = [];
+  for (let i = 0; i < Math.min(proxies.length, 6); i++) {
+    const p = proxies[i];
+    console.log(`Прокси #${i+1}: ${p.link}`);
+    const flag = p.flag || "🇪🇺";
+    const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(p.link)}`;
+    
+    keyboard.push([
+      { text: `${flag} Прокси #${i + 1}`, url: p.link },
+      { text: "📤", url: shareUrl }
+    ]);
+  }
+  
+  keyboard.push([{ text: "🔄 Обновить список прокси", callback_data: "refresh" }]);
+  
+  return { inline_keyboard: keyboard };
+}
+
+async function sendProxiesList(chatId, env, messageId = null) {
+  console.log(`📞 sendProxiesList вызван для чата ${chatId}`);
+  console.log(`🔑 Токен: ${env.TELEGRAM_BOT_TOKEN ? env.TELEGRAM_BOT_TOKEN.substring(0, 10) + '...' : 'undefined'}`);
   
   let proxies = [];
   try {
@@ -31,8 +101,6 @@ async function sendProxiesList(chatId, env) {
     if (proxiesJson) {
       proxies = JSON.parse(proxiesJson);
       console.log(`📦 Найдено ${proxies.length} прокси в KV`);
-    } else {
-      console.log('⚠️ Прокси не найдены в KV');
     }
   } catch (err) {
     console.error("Ошибка чтения KV:", err);
@@ -40,103 +108,77 @@ async function sendProxiesList(chatId, env) {
   
   const now = new Date();
   const formattedTime = `${now.getDate().toString().padStart(2, "0")}.${(now.getMonth() + 1).toString().padStart(2, "0")} ${now.getHours().toString().padStart(2, "0")}:${now.getMinutes().toString().padStart(2, "0")}`;
-  let text = `<b>🔥 Лучшие прокси SAMOLET на ${formattedTime}</b>\n\n`;
+  let text = `<b>🔥 Лучшие прокси SAMOLET на ${formattedTime}</b>`;
   
   if (!proxies || proxies.length === 0) {
-    text += "❌ Нет доступных прокси.\n\nНажмите /refresh для обновления.";
+    text += "\n❌ Нет доступных прокси.";
+    const keyboard = { inline_keyboard: [[{ text: "🔄 Обновить список", callback_data: "refresh" }]] };
+    if (messageId) {
+      await editMessageText(chatId, messageId, text, env.TELEGRAM_BOT_TOKEN, keyboard);
+    } else {
+      await sendMessage(chatId, text, env.TELEGRAM_BOT_TOKEN, keyboard);
+    }
+    return;
+  }
+  
+  const keyboard = createProxyButtons(proxies);
+  console.log(`📋 Клавиатура создана`);
+  
+  if (messageId) {
+    await editMessageText(chatId, messageId, text, env.TELEGRAM_BOT_TOKEN, keyboard);
   } else {
-    for (let i = 0; i < Math.min(proxies.length, 6); i++) {
-      const p = proxies[i];
-      const flag = p.flag || "🌍";
-      text += `${flag} <b>Прокси #${i + 1}</b>\n`;
-      text += `<code>${p.link}</code>\n\n`;
-    }
-    text += `\n🔄 <i>Обновляется автоматически каждые 6 часов</i>`;
+    await sendMessage(chatId, text, env.TELEGRAM_BOT_TOKEN, keyboard);
   }
-  
-  const keyboard = {
-    inline_keyboard: [[{ text: "🔄 Обновить список", callback_data: "refresh" }]]
-  };
-  
-  const url = `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`;
-  const body = JSON.stringify({
-    chat_id: chatId,
-    text: text,
-    parse_mode: "HTML",
-    reply_markup: keyboard,
-    disable_web_page_preview: true
-  });
-  
-  console.log(`📨 Отправка в Telegram, chat_id: ${chatId}`);
-  console.log(`📨 URL: ${url}`);
-  console.log(`📨 Текст сообщения: ${text.substring(0, 100)}...`);
-  
-  try {
-    const response = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: body
-    });
-    const result = await response.json();
-    console.log(`📨 Ответ от Telegram:`, JSON.stringify(result));
-    console.log(`📨 Сообщение отправлено в чат ${chatId}, результат: ${result.ok ? 'OK' : 'ERROR'}`);
-    if (!result.ok) {
-      console.log(`📨 Ошибка: ${result.description}`);
-    }
-  } catch (err) {
-    console.error("Ошибка sendProxiesList:", err);
-  }
-}
-
-async function sendStatus(chatId, env) {
-  let proxiesCount = 0;
-  let lastUpdate = "никогда";
-  try {
-    const proxiesJson = await env.PROXY_KV.get("best_proxies");
-    if (proxiesJson) {
-      proxiesCount = JSON.parse(proxiesJson).length;
-    }
-    const lastUpdateRaw = await env.PROXY_KV.get("last_update");
-    if (lastUpdateRaw) {
-      lastUpdate = lastUpdateRaw;
-    }
-  } catch (err) {
-    console.error("Ошибка чтения KV:", err);
-  }
-  
-  const text = `
-📊 <b>Статус бота</b>
-
-🟢 Worker: active
-📦 Прокси в кэше: ${proxiesCount}
-🕐 Последнее обновление: ${lastUpdate}
-  `;
-  await sendMessage(chatId, text, env.TELEGRAM_BOT_TOKEN);
 }
 
 async function handleCallback(query, env) {
   const chatId = query.message.chat.id;
   const data = query.data;
   
-  const answerUrl = `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/answerCallbackQuery`;
-  await fetch(answerUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      callback_query_id: query.id,
-      text: "🔄 Обновляю..."
-    })
-  });
+  console.log(`📥 Callback: ${data} от чата ${chatId}`);
+  
+  await answerCallbackQuery(query.id, "🔄 Запускаю обновление...", env.TELEGRAM_BOT_TOKEN);
   
   if (data === "refresh") {
-    await sendMessage(chatId, "🔄 <b>Обновление прокси начато!</b>\n\nРезультат появится через несколько минут.", env.TELEGRAM_BOT_TOKEN);
+    console.log(`📥 Callback refresh, GITHUB_TOKEN exists: ${!!env.GITHUB_TOKEN}`);
+    
+    const githubToken = env.GITHUB_TOKEN;
+    if (githubToken) {
+      console.log(`Token first 5 chars: ${githubToken.substring(0, 5)}...`);
+      try {
+        const response = await fetch('https://api.github.com/repos/krapius/telegram-proxy-bot/actions/workflows/update-proxies.yml/dispatches', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${githubToken}`,
+            'Accept': 'application/vnd.github.v3+json',
+            'User-Agent': 'Telegram-Proxy-Bot/1.0 (https://t.me/migumBot)'
+          },
+          body: JSON.stringify({ 
+            ref: 'main',
+            inputs: {
+              chat_id: chatId.toString()
+            }
+          })
+        });
+        console.log(`GitHub API response status: ${response.status}`);
+        if (response.status === 204) {
+          console.log('✅ GitHub Actions triggered successfully');
+        } else {
+          console.log(`⚠️ GitHub API returned ${response.status}`);
+        }
+      } catch (err) {
+        console.error('❌ GitHub error:', err);
+      }
+    } else {
+      console.log('❌ GITHUB_TOKEN not set in Worker environment');
+    }
   }
 }
 
 async function handleWebhook(request, env) {
   try {
     const update = await request.json();
-    console.log("📥 Получен webhook:", JSON.stringify(update).slice(0, 200));
+    console.log("📥 Получен webhook");
     
     if (update.callback_query) {
       await handleCallback(update.callback_query, env);
@@ -152,11 +194,38 @@ async function handleWebhook(request, env) {
       if (text === "/start") {
         await sendProxiesList(chatId, env);
       } else if (text === "/refresh") {
-        await sendMessage(chatId, "🔄 <b>Обновление прокси начато!</b>\n\nЭто может занять 1-2 минуты.", env.TELEGRAM_BOT_TOKEN);
+        await sendMessage(chatId, "🔄 <b>Обновление прокси начато!</b>\n\nЭто займёт 1-2 минуты...\nРезультат появится здесь автоматически.", env.TELEGRAM_BOT_TOKEN);
+        
+        const githubToken = env.GITHUB_TOKEN;
+        if (githubToken) {
+          try {
+            await fetch('https://api.github.com/repos/krapius/telegram-proxy-bot/actions/workflows/update-proxies.yml/dispatches', {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${githubToken}`,
+                'Accept': 'application/vnd.github.v3+json',
+              },
+              body: JSON.stringify({ 
+                ref: 'main',
+                inputs: {
+                  chat_id: chatId.toString()
+                }
+              })
+            });
+          } catch (err) {
+            console.error('❌ Failed to trigger GitHub Actions:', err);
+          }
+        }
       } else if (text === "/status") {
-        await sendStatus(chatId, env);
-      } else if (text && text.startsWith("/")) {
-        await sendMessage(chatId, "❓ Неизвестная команда\n\nДоступные:\n/start - список прокси\n/refresh - обновить\n/status - статус", env.TELEGRAM_BOT_TOKEN);
+        let proxiesCount = 0;
+        try {
+          const proxiesJson = await env.PROXY_KV.get("best_proxies");
+          if (proxiesJson) {
+            proxiesCount = JSON.parse(proxiesJson).length;
+          }
+        } catch (err) {}
+        
+        await sendMessage(chatId, `📊 <b>Статус бота</b>\n\n🟢 Worker: active\n📦 Прокси в кэше: ${proxiesCount}`, env.TELEGRAM_BOT_TOKEN);
       }
     }
     
@@ -202,20 +271,16 @@ async function handleStatus(env) {
     if (lastUpdateRaw) {
       lastUpdate = lastUpdateRaw;
     }
-  } catch (err) {
-    console.error("Ошибка чтения KV:", err);
-  }
-  
+  } catch (err) {}
+
   const html = `<!DOCTYPE html>
 <html>
-<head>
-  <title>Telegram Proxy Bot</title>
-  <style>
-    body { font-family: system-ui; max-width: 800px; margin: 50px auto; padding: 20px; text-align: center; }
-    h1 { color: #2c3e50; }
-    .status { background: #27ae60; color: white; padding: 10px 20px; border-radius: 8px; display: inline-block; }
-    .info { background: #f8f9fa; padding: 20px; border-radius: 8px; margin-top: 20px; text-align: left; }
-  </style>
+<head><title>Telegram Proxy Bot</title>
+<style>
+  body { font-family: system-ui; max-width: 800px; margin: 50px auto; padding: 20px; text-align: center; }
+  .status { background: #27ae60; color: white; padding: 10px 20px; border-radius: 8px; display: inline-block; }
+  .info { background: #f8f9fa; padding: 20px; border-radius: 8px; margin-top: 20px; text-align: left; }
+</style>
 </head>
 <body>
   <h1>🤖 Telegram Proxy Bot</h1>
@@ -226,12 +291,20 @@ async function handleStatus(env) {
     <p>• Последнее обновление: ${lastUpdate}</p>
     <p>• Бот: <a href="https://t.me/migumBot">@migumBot</a></p>
   </div>
-  <hr>
-  <p><small>Cloudflare Worker | ${new Date().toISOString()}</small></p>
 </body>
 </html>`;
-  return new Response(html, {
-    headers: { "Content-Type": "text/html" }
+  return new Response(html, { headers: { "Content-Type": "text/html" } });
+}
+
+async function handleGetProxies(env) {
+  const proxiesJson = await env.PROXY_KV.get("best_proxies");
+  if (!proxiesJson) {
+    return new Response(JSON.stringify({ proxies: [] }), { 
+      headers: { "Content-Type": "application/json" } 
+    });
+  }
+  return new Response(proxiesJson, { 
+    headers: { "Content-Type": "application/json" } 
   });
 }
 
@@ -247,18 +320,13 @@ async function proxyToTelegram(request, env) {
     }
     const response = await fetch(telegramUrl, {
       method: request.method,
-      headers: {
-        "Content-Type": request.headers.get("Content-Type") || "application/json",
-      },
+      headers: { "Content-Type": request.headers.get("Content-Type") || "application/json" },
       body: body,
     });
     const responseBody = await response.text();
     return new Response(responseBody, {
       status: response.status,
-      headers: {
-        "Content-Type": "application/json",
-        "Access-Control-Allow-Origin": "*",
-      }
+      headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
     });
   } catch (err) {
     return new Response(JSON.stringify({ ok: false, error: err.message }), {
@@ -272,6 +340,10 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     const path = url.pathname;
+    
+    if (path === "/proxies") {
+      return await handleGetProxies(env);
+    }
     
     if (path.startsWith("/bot")) {
       return await proxyToTelegram(request, env);

@@ -1,24 +1,42 @@
-name: Update Verified Proxy Lists
+name: Update Proxies
+
 on:
   schedule:
-    - cron: '0 */4 * * *'
+    - cron: '0 */6 * * *'
   workflow_dispatch:
+    inputs:
+      chat_id:
+        description: 'Chat ID для отправки результата'
+        required: false
+        default: '305673438'
+
+env:
+  PYTHON_VERSION: '3.11'
+  WORKER_URL: 'https://telegram-proxy-bot.krichencat.workers.dev'
+  BOT_TOKEN: '8664454935:AAFPk1ehMIJB1r9MrDRTrb9JDtpHYjg1Vjc'
 
 jobs:
-  collect:
+  update:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    
     steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-python@v4
-      with:
-        python-version: '3.11'
-    - run: pip install requests telethon
-    - run: python main.py --top 200  # ← main.py!
-    - run: |
-        git config user.name "Proxy Bot"
-        git config user.email "bot@github.com"
-        git add verified/ || true
-        git diff --staged --quiet || git commit -m "🔥 Verified proxies $(date)"
-        git push || true
-
-
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests geoip2 ipaddress httpx
+      
+      - name: Run update with progress
+        run: |
+          cd proxy
+          python update_with_progress.py ${{ github.event.inputs.chat_id }}
