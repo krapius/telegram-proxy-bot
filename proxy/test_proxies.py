@@ -1,4 +1,3 @@
-
 #!/usr/bin/env python3
 import re
 import os
@@ -228,4 +227,3 @@ def save_proxies_to_file(proxies, filename="best_proxies.txt"):
     print(f"💾 Сохранено {len(final_proxies)} прокси в best_proxies.json")
     
     return final_proxies
-EOF
