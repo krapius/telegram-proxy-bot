@@ -6,3 +6,24 @@ __pycache__/
 wrangler-*.log
 proxy/GeoLite2-Country.mmdb
 *.mmdb
+
+# Python
+__pycache__/
+*.pyc
+
+# Generated files
+best_proxies.txt
+best_proxies.json
+last_post.json
+
+# Local configs
+.DS_Store
+.wrangler/
+wrangler.toml
+.env
+
+# Large GeoIP database
+GeoLite2-Country.mmdb
+
+# Local scripts
+proxy/update_proxies.sh
