@@ -294,8 +294,7 @@ def main():
         if not line and process.poll() is not None:
             break
         if line:
-            line = line.strip()
-            print(f"   main.py: {line[:100]}")
+            print(f"   main.py: {line.strip()[:100]}")
             match = re.search(r'\[(\d+)/(\d+)\]', line)
             if match:
                 checked = int(match.group(1))
@@ -334,22 +333,29 @@ def main():
     total_to_test = max(total_proxies, 50)
     
     # Собираем весь вывод для отладки
-    test_output = []
+    test_stdout = []
+    test_stderr = []
     
     while True:
         line = process.stdout.readline()
         if not line and process.poll() is not None:
             break
         if line:
-            line = line.strip()
-            test_output.append(line)
-            print(f"   test_proxies.py: {line[:100]}")
+            test_stdout.append(line.strip())
+            print(f"   test_proxies.py: {line.strip()[:100]}")
             if 'Проверка' in line and ':' in line:
                 tested += 1
                 percent = int(tested * 100 / total_to_test) if total_to_test > 0 else 0
                 if percent >= last_percent + 10 or percent == 100:
                     last_percent = percent
                     update_progress(progress_message_id, 3, f"TCP-тестирование... {percent}% ({tested}/{total_to_test})", percent, 100, start_time, total_proxies)
+    
+    # Собираем stderr
+    stderr_output = process.stderr.read()
+    if stderr_output:
+        test_stderr = stderr_output.strip().split('\n')
+        for line in test_stderr:
+            print(f"   test_proxies.py stderr: {line[:100]}")
     
     process.wait(timeout=10)
     print("✅ test_proxies.py завершён")
@@ -362,29 +368,33 @@ def main():
     print(f"   best_proxies.txt exists: {os.path.exists('best_proxies.txt')}")
     print(f"   best_proxies.json exists: {os.path.exists('best_proxies.json')}")
     
-    # Показываем все файлы в папке
-    print(f"\n📁 Все файлы в текущей папке:")
+    # Показываем содержимое текущей папки
+    print(f"\n📁 Содержимое текущей папки:")
     for f in sorted(os.listdir('.')):
-        if f.endswith('.txt') or f.endswith('.json') or f == 'verified':
-            if os.path.isdir(f):
-                print(f"   📁 {f}/")
-            else:
-                size = os.path.getsize(f)
-                print(f"   📄 {f} ({size} bytes)")
+        if f == 'verified':
+            print(f"   📁 {f}/")
+        elif f.endswith('.txt') or f.endswith('.json') or f.endswith('.py'):
+            size = os.path.getsize(f) if os.path.isfile(f) else 0
+            print(f"   📄 {f} ({size} bytes)")
     
     # Показываем содержимое папки verified
     if os.path.exists('verified'):
         print(f"\n📁 Содержимое папки verified/:")
         for f in sorted(os.listdir('verified')):
-            if f.endswith('.txt') or f.endswith('.json'):
-                print(f"   - {f}")
+            print(f"   - {f}")
     else:
         print(f"\n⚠️ Папка verified не найдена!")
     
-    # Показываем последние 10 строк вывода test_proxies.py для отладки
-    print(f"\n📋 Последние строки вывода test_proxies.py:")
-    for line in test_output[-10:]:
+    # Показываем последние 10 строк вывода test_proxies.py
+    print(f"\n📋 Последние 10 строк вывода test_proxies.py:")
+    for line in test_stdout[-10:]:
         print(f"   {line}")
+    
+    # Показываем ошибки если есть
+    if test_stderr:
+        print(f"\n⚠️ Ошибки test_proxies.py:")
+        for line in test_stderr[-5:]:
+            print(f"   {line}")
     
     print("="*60 + "\n")
     
