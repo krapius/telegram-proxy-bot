@@ -10,6 +10,16 @@ import httpx
 import time
 import re
 import json
+import glob
+from datetime import datetime
+
+# Импортируем функции из test_proxies.py
+from test_proxies import (
+    get_latest_proxy_files, 
+    extract_proxies_from_file, 
+    save_proxies_to_file,
+    advanced_final_check
+)
 
 BOT_TOKEN = os.environ.get('BOT_TOKEN', '8664454935:AAFPk1ehMIJB1r9MrDRTrb9JDtpHYjg1Vjc')
 WORKER_URL = os.environ.get('WORKER_URL', 'https://telegram-proxy-bot.krichencat.workers.dev')
@@ -147,124 +157,43 @@ def create_proxy_buttons(proxies):
     keyboard.append([{"text": "🔄 Обновить список прокси", "callback_data": "refresh"}])
     return {"inline_keyboard": keyboard}
 
-def send_final_result(proxies):
-    """Отправляет финальный результат с пингом и скоростью"""
-    now = time.strftime("%d.%m %H:%M")
-    text = f"<b>🔥 Лучшие прокси SAMOLET на {now}</b>\n\n"
-    
-    if not proxies:
-        text += "❌ Нет прокси"
-        keyboard = {"inline_keyboard": [[{"text": "🔄 Обновить список", "callback_data": "refresh"}]]}
-        send_message(text, reply_markup=keyboard)
-        return
-    
-    for i, p in enumerate(proxies[:6], 1):
-        flag = p.get('flag', '🇪🇺')
-        stats = p.get('strict_stats', {})
-        ping = stats.get('ping', p.get('ping', 0))
-        speed = p.get('download_speed', 0)
-        
-        # Определяем качество по пингу
-        if ping and ping < 100:
-            quality = "🚀"
-        elif ping and ping < 200:
-            quality = "✅"
-        elif ping:
-            quality = "⚠️"
-        else:
-            quality = "❓"
-        
-        if ping and speed:
-            text += f"{flag} {quality} <b>Прокси #{i}</b> — {ping:.0f}мс | {speed:.0f} КБ/с\n"
-        elif ping:
-            text += f"{flag} {quality} <b>Прокси #{i}</b> — {ping:.0f}мс\n"
-        else:
-            text += f"{flag} {quality} <b>Прокси #{i}</b>\n"
-        text += f"<code>{p['link']}</code>\n\n"
-    
-    text += f"\n🔄 <i>Обновляется автоматически каждые 6 часов</i>"
-    text += f"\n📊 <i>🚀 &lt;100мс — отлично | ✅ 100-200мс — хорошо | ⚠️ &gt;200мс — медленно</i>"
-    
-    keyboard = create_proxy_buttons(proxies[:10])
-    send_message(text, reply_markup=keyboard)
-
-
 def parse_proxies_from_file():
-    """Парсит best_proxies.json в список прокси с пингом и скоростью, фильтруя невалидные"""
+    """Парсит best_proxies.json в список прокси с пингом и скоростью"""
     proxies = []
     try:
-        # Сначала пробуем читать JSON
         with open('best_proxies.json', 'r', encoding='utf-8') as f:
             proxies = json.load(f)
             print(f"📦 Загружено {len(proxies)} прокси из JSON")
-            
-            # Фильтруем невалидные ссылки
-            valid_proxies = []
-            for p in proxies:
-                link = p.get('link', '')
-                # Проверяем на невалидные символы
-                if 'server=' in link:
-                    server = link.split('server=')[1].split('&')[0]
-                    # Пропускаем ссылки с точкой в конце
-                    if server.endswith('.'):
-                        print(f"⚠️ Пропускаем невалидную ссылку: {server}")
-                        continue
-                valid_proxies.append(p)
-            
-            print(f"📦 После фильтрации: {len(valid_proxies)} прокси")
-            return valid_proxies
-    except:
-        pass
+            return proxies
+    except Exception as e:
+        print(f"⚠️ Ошибка чтения JSON: {e}")
     
-    # Если JSON нет, читаем txt (старый формат)
     try:
         with open('best_proxies.txt', 'r', encoding='utf-8') as f:
             lines = f.read().split('\n')
-        
-        for i, line in enumerate(lines):
-            if line.startswith('tg://proxy'):
-                # Проверяем на невалидные ссылки
-                server_match = re.search(r'server=([^&]+)', line)
-                if server_match:
-                    server = server_match.group(1)
-                    # Пропускаем ссылки с пробелами или точкой в конце
-                    if ' ' in server or server.endswith('.'):
-                        print(f"⚠️ Пропускаем невалидную ссылку: {line[:80]}...")
-                        continue
-                
-                proxy = {'link': line}
-                if i > 0 and '🇷🇺' in lines[i-1]:
-                    proxy['flag'] = '🇷🇺'
-                elif i > 0 and '🇪🇺' in lines[i-1]:
-                    proxy['flag'] = '🇪🇺'
-                else:
-                    proxy['flag'] = '🌍'
-                proxies.append(proxy)
+            for line in lines:
+                if line.startswith('tg://proxy'):
+                    proxies.append({'link': line})
+            print(f"📦 Найдено {len(proxies)} прокси в TXT")
+            return proxies
     except Exception as e:
-        print(f"Ошибка парсинга: {e}")
+        print(f"⚠️ Ошибка чтения TXT: {e}")
     
-    print(f"📦 Найдено {len(proxies)} прокси в файле")
-    return proxies
-
+    return []
 
 def main():
     start_time = time.time()
     
     print("🔄 Запуск обновления прокси...")
     
-    # Отправляем начальное сообщение (будет удалено через 2 секунды)
     start_message_id = send_message("🔄 <b>Обновление прокси начато!</b>\n\nЭто займёт 1-2 минуты...\nРезультат появится здесь автоматически.")
-    
-    # Небольшая пауза, чтобы сообщение успело отобразиться
     time.sleep(0.1)
     
-    # Отправляем сообщение с прогрессом
     progress_message_id = send_message("🔄 <b>Запуск обновления прокси...</b>")
     if not progress_message_id:
         print("❌ Не удалось отправить начальное сообщение")
         return
     
-    # Удаляем стартовое сообщение
     if start_message_id:
         delete_message(start_message_id)
     
@@ -273,7 +202,7 @@ def main():
     time.sleep(0.5)
     update_progress(progress_message_id, 1, "Готов к работе", 1, 1, start_time)
     
-    # Этап 2: main.py
+    # Этап 2: Запуск main.py для сбора прокси
     print("📦 Запуск main.py...")
     update_progress(progress_message_id, 2, "Запуск сбора прокси...", 0, 1, start_time)
     
@@ -315,123 +244,49 @@ def main():
     print("✅ main.py завершён")
     print(f"📊 main.py собрал прокси: {total_proxies}")
     
-    # Этап 3: test_proxies.py
-    print("📊 Запуск test_proxies.py...")
-    update_progress(progress_message_id, 3, "TCP-тестирование...", 0, 100, start_time, total_proxies)
+    # Этап 3: Проверка прокси через функции test_proxies.py
+    print("📊 Проверка прокси...")
+    update_progress(progress_message_id, 3, "Проверка прокси...", 0, 100, start_time, total_proxies)
     
-    process = subprocess.Popen(
-        ['python3', 'test_proxies.py'],
-        cwd=os.path.dirname(__file__),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        bufsize=1
-    )
+    # Получаем последние файлы из verified
+    ru_file, eu_file, all_file = get_latest_proxy_files()
+    print(f"   RU файл: {ru_file}")
+    print(f"   EU файл: {eu_file}")
     
-    last_percent = 0
-    tested = 0
-    total_to_test = max(total_proxies, 50)
+    all_proxies = []
     
-    # Собираем весь вывод для отладки
-    test_stdout = []
-    test_stderr = []
+    if ru_file:
+        print(f"   Обработка RU прокси...")
+        ru_proxies = extract_proxies_from_file(ru_file, "ru")
+        all_proxies.extend(ru_proxies)
+        print(f"   Найдено RU прокси: {len(ru_proxies)}")
     
-    while True:
-        line = process.stdout.readline()
-        if not line and process.poll() is not None:
-            break
-        if line:
-            test_stdout.append(line.strip())
-            print(f"   test_proxies.py: {line.strip()[:100]}")
-            if 'Проверка' in line and ':' in line:
-                tested += 1
-                percent = int(tested * 100 / total_to_test) if total_to_test > 0 else 0
-                if percent >= last_percent + 10 or percent == 100:
-                    last_percent = percent
-                    update_progress(progress_message_id, 3, f"TCP-тестирование... {percent}% ({tested}/{total_to_test})", percent, 100, start_time, total_proxies)
+    if eu_file:
+        print(f"   Обработка EU прокси...")
+        eu_proxies = extract_proxies_from_file(eu_file, "eu")
+        all_proxies.extend(eu_proxies)
+        print(f"   Найдено EU прокси: {len(eu_proxies)}")
     
-    # Собираем stderr
-    stderr_output = process.stderr.read()
-    if stderr_output:
-        test_stderr = stderr_output.strip().split('\n')
-        for line in test_stderr:
-            print(f"   test_proxies.py stderr: {line[:100]}")
+    if not all_proxies:
+        print("❌ Нет прокси для проверки")
+        delete_message(progress_message_id)
+        send_message("❌ <b>Не удалось найти прокси</b>\n\nПопробуйте позже")
+        return
     
-    process.wait(timeout=10)
-    print("✅ test_proxies.py завершён")
-    
-    # Отладка: проверяем, какие файлы создались
-    print("\n" + "="*60)
-    print("🔍 ОТЛАДКА: Проверка созданных файлов")
-    print("="*60)
-    print(f"   Текущая директория: {os.getcwd()}")
-    print(f"   best_proxies.txt exists: {os.path.exists('best_proxies.txt')}")
-    print(f"   best_proxies.json exists: {os.path.exists('best_proxies.json')}")
-    
-    # Показываем содержимое текущей папки
-    print(f"\n📁 Содержимое текущей папки:")
-    for f in sorted(os.listdir('.')):
-        if f == 'verified':
-            print(f"   📁 {f}/")
-        elif f.endswith('.txt') or f.endswith('.json') or f.endswith('.py'):
-            size = os.path.getsize(f) if os.path.isfile(f) else 0
-            print(f"   📄 {f} ({size} bytes)")
-    
-    # Показываем содержимое папки verified
-    if os.path.exists('verified'):
-        print(f"\n📁 Содержимое папки verified/:")
-        for f in sorted(os.listdir('verified')):
-            print(f"   - {f}")
-    else:
-        print(f"\n⚠️ Папка verified не найдена!")
-    
-    # Показываем последние 10 строк вывода test_proxies.py
-    print(f"\n📋 Последние 10 строк вывода test_proxies.py:")
-    for line in test_stdout[-10:]:
-        print(f"   {line}")
-    
-    # Показываем ошибки если есть
-    if test_stderr:
-        print(f"\n⚠️ Ошибки test_proxies.py:")
-        for line in test_stderr[-5:]:
-            print(f"   {line}")
-    
-    print("="*60 + "\n")
-    
-    # Парсим результат
-    proxies = parse_proxies_from_file()
-    total_proxies_found = len(proxies)
-    
-    print(f"📊 После парсинга найдено прокси: {total_proxies_found}")
+    # Сохраняем в best_proxies.txt и best_proxies.json
+    print(f"📦 Сохраняем {len(all_proxies)} прокси...")
+    final_proxies = save_proxies_to_file(all_proxies)
+    total_proxies_found = len(final_proxies)
     
     update_progress(progress_message_id, 3, f"Найдено {total_proxies_found} стабильных", 100, 100, start_time, total_proxies_found)
     
-    # Если прокси не найдены, завершаем
-    if total_proxies_found == 0:
-        print("❌ Нет стабильных прокси для отправки")
-        delete_message(progress_message_id)
-        send_message("❌ <b>Не удалось найти стабильные прокси</b>\n\nПопробуйте позже")
-        return
-    
-    # Этап 4: Анализ (имитация)
-    update_progress(progress_message_id, 4, "Анализ стабильности...", 0, 100, start_time, total_proxies_found)
-    
-    for i in range(1, min(total_proxies_found, 100) + 1):
-        if i % max(1, total_proxies_found // 10) == 0:
-            percent = int(i * 100 / total_proxies_found) if total_proxies_found > 0 else 0
-            update_progress(progress_message_id, 4, f"Анализ прокси {i}/{total_proxies_found}", percent, 100, start_time, total_proxies_found)
-        time.sleep(0.05)
-    
-    update_progress(progress_message_id, 4, f"Отобрано {total_proxies_found} лучших", 100, 100, start_time, total_proxies_found)
-    
-    # Этап 5: Проверка
-    update_progress(progress_message_id, 5, "Проверка соединения...", 100, 100, start_time, total_proxies_found)
-    time.sleep(1)
-    
-    # Этап 6: Подготовка и отправка
-    update_progress(progress_message_id, 6, "Формирую список...", 100, 100, start_time, total_proxies_found)
+    # Этап 4-6: Имитация прогресса
+    for stage in range(4, 7):
+        update_progress(progress_message_id, stage, "Обработка...", 100, 100, start_time, total_proxies_found)
+        time.sleep(0.5)
     
     # Отправляем в Worker
+    proxies = parse_proxies_from_file()
     print(f"📤 Отправка {len(proxies)} прокси в Worker...")
     try:
         response = httpx.post(
@@ -442,7 +297,6 @@ def main():
         if response.status_code == 200:
             print(f"✅ Отправлено {len(proxies)} прокси в Worker")
             
-            # Просим Worker отправить сообщение в канал (имитируем webhook с командой /start)
             print(f"📨 Запрашиваем отправку сообщения в канал...")
             try:
                 fake_update = {
@@ -466,10 +320,7 @@ def main():
         print(f"❌ Ошибка отправки: {e}")
     
     time.sleep(0.5)
-    
-    # Удаляем сообщение с прогрессом
     delete_message(progress_message_id)
-    
     print("🎉 Обновление завершено!")
 
 if __name__ == "__main__":
