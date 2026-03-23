@@ -191,7 +191,7 @@ def parse_best_proxies_file():
 
 def create_proxy_buttons(proxies):
     keyboard = []
-    for i, p in enumerate(proxies[:6], 1):
+    for i, p in enumerate(proxies[:10], 1):
         flag = p.get('flag', '🇷🇺' if 'RU' in p.get('type', '') else '🇪🇺')
         main_button = InlineKeyboardButton(text=f"{flag} Прокси #{i}", url=p['link'])
         encoded_link = urllib.parse.quote(p['link'])
