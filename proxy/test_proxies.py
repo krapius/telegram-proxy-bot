@@ -1,5 +1,4 @@
-cd /Users/artem/projects/telegram-proxy-collector
-cat > proxy/test_proxies.py << 'EOF'
+
 #!/usr/bin/env python3
 import re
 import os
