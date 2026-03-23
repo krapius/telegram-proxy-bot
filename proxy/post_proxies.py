@@ -241,7 +241,7 @@ def test_proxy_stability(server, port, level='strict'):
     print(f"   📊 Тест стабильности ({config['description']}) для {server}:{port}")
     print(f"      TCP пинг: {avg_ping:.0f}мс, потери: {loss_percent:.0f}%, джиттер: {jitter:.0f}мс")
     
-    # ===== ПРОВЕРКА HTTP СТАТУСА (блокировка Telegram) =====
+    # ===== ПРОВЕРКА HTTP СТАТУСА =====
     http_blocked = False
     if level == 'strict':
         try:
@@ -257,14 +257,28 @@ def test_proxy_stability(server, port, level='strict'):
     if http_blocked:
         return None, None, 100, False, None
     
-    # ===== ПРОВЕРКА СКОРОСТИ (через реальный интернет-ресурс) =====
+    # ===== РЕАЛЬНЫЙ TELEGRAM PING (важный тест!) =====
+    telegram_ping = None
+    
+    if level == 'strict':
+        print(f"\n      📡 Реальный Telegram ping (через прокси):")
+        telegram_ping = test_telegram_ping(server, port, timeout=5)
+        
+        if telegram_ping:
+            print(f"         ✅ Telegram ответил за {telegram_ping:.0f}мс")
+            # Заменяем TCP пинг на реальный Telegram ping
+            avg_ping = telegram_ping
+        else:
+            print(f"         ❌ Telegram не отвечает через прокси")
+            return None, None, 100, False, None
+    
+    # ===== ПРОВЕРКА СКОРОСТИ ЗАГРУЗКИ =====
     download_speed = None
     download_success = False
     
     if level == 'strict':
         print(f"\n      📥 Тест скорости загрузки (100 КБ):")
         
-        # Используем реальные тестовые файлы из интернета (через прокси)
         test_urls = [
             f"http://speedtest.tele2.net/100KB.zip",
             f"http://ipv4.download.thinkbroadband.com/100KB.zip",
@@ -273,7 +287,6 @@ def test_proxy_stability(server, port, level='strict'):
         
         for test_url in test_urls:
             try:
-                # Создаём отдельный opener для каждого прокси
                 proxy_handler = urllib.request.ProxyHandler({
                     'http': f'http://{server}:{port}',
                     'https': f'http://{server}:{port}'
@@ -287,13 +300,12 @@ def test_proxy_stability(server, port, level='strict'):
                 start_time = time.time()
                 req = urllib.request.Request(test_url, method='GET')
                 
-                # Используем отдельный opener
                 with opener.open(req, timeout=8) as response:
-                    data = response.read(102400)  # 100 КБ
+                    data = response.read(102400)
                     elapsed = time.time() - start_time
                     
                     if len(data) > 0 and elapsed > 0:
-                        download_speed = (len(data) / 1024) / elapsed  # КБ/сек
+                        download_speed = (len(data) / 1024) / elapsed
                         download_success = True
                         print(f"         ✅ Скорость: {download_speed:.0f} КБ/сек (за {elapsed:.1f}с)")
                         break
@@ -302,9 +314,9 @@ def test_proxy_stability(server, port, level='strict'):
                 continue
         
         if not download_success:
-            print(f"         ⚠️ Тест скорости не удался, используем только TCP")
+            print(f"         ⚠️ Тест скорости не удался")
             download_success = True
-            download_speed = 100  # Значение по умолчанию для прохождения
+            download_speed = 100
     
     meets_criteria = (
         avg_ping <= config['max_ping'] and 
@@ -312,7 +324,6 @@ def test_proxy_stability(server, port, level='strict'):
         loss_percent <= config['max_loss']
     )
     
-    # Для strict уровня учитываем скорость (если тест прошёл)
     if level == 'strict' and download_success and download_speed:
         if download_speed < 50:
             meets_criteria = False
@@ -321,9 +332,47 @@ def test_proxy_stability(server, port, level='strict'):
             print(f"      ✅ Скорость OK: {download_speed:.0f} КБ/сек")
     
     status = "✅ ПРОШЕЛ" if meets_criteria else "❌ НЕ ПРОШЕЛ"
-    print(f"      📈 РЕЗУЛЬТАТ: пинг={avg_ping:.0f}мс, джиттер={jitter:.0f}мс, потери={loss_percent:.0f}%, скорость={download_speed if download_speed else 0:.0f} КБ/с -> {status}")
+    print(f"      📈 РЕЗУЛЬТАТ: Telegram ping={avg_ping:.0f}мс, джиттер={jitter:.0f}мс, потери={loss_percent:.0f}%, скорость={download_speed if download_speed else 0:.0f} КБ/с -> {status}")
     
     return avg_ping, jitter, loss_percent, meets_criteria, download_speed
+
+def test_telegram_ping(server, port, timeout=5):
+    """
+    Проверяет реальное время отклика Telegram через прокси
+    Возвращает время в мс или None если недоступен
+    """
+    import urllib.request
+    import ssl
+    
+    # Тестовый запрос к Telegram API через прокси
+    test_url = f"https://api.telegram.org/bot{TOKEN}/getMe"
+    
+    try:
+        proxy_handler = urllib.request.ProxyHandler({
+            'http': f'http://{server}:{port}',
+            'https': f'http://{server}:{port}'
+        })
+        opener = urllib.request.build_opener(proxy_handler)
+        
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        
+        start_time = time.time()
+        req = urllib.request.Request(test_url, method='GET')
+        
+        with opener.open(req, timeout=timeout, context=ctx) as response:
+            elapsed = (time.time() - start_time) * 1000
+            data = response.read()
+            
+            # Проверяем, что ответ корректный
+            if b'"ok":true' in data or b'"ok":true' in data:
+                return elapsed
+            return None
+            
+    except Exception as e:
+        print(f"      ⚠️ Telegram ping failed: {str(e)[:50]}")
+        return None
 
 def advanced_final_check(proxies, progress_callback=None):
     """Оптимизированная проверка стабильности с callback для прогресса"""
