@@ -188,15 +188,31 @@ def send_final_result(proxies):
     keyboard = create_proxy_buttons(proxies[:10])
     send_message(text, reply_markup=keyboard)
 
+
 def parse_proxies_from_file():
-    """Парсит best_proxies.json в список прокси с пингом и скоростью"""
+    """Парсит best_proxies.json в список прокси с пингом и скоростью, фильтруя невалидные"""
     proxies = []
     try:
         # Сначала пробуем читать JSON
         with open('best_proxies.json', 'r', encoding='utf-8') as f:
             proxies = json.load(f)
             print(f"📦 Загружено {len(proxies)} прокси из JSON")
-            return proxies
+            
+            # Фильтруем невалидные ссылки
+            valid_proxies = []
+            for p in proxies:
+                link = p.get('link', '')
+                # Проверяем на невалидные символы
+                if 'server=' in link:
+                    server = link.split('server=')[1].split('&')[0]
+                    # Пропускаем ссылки с точкой в конце
+                    if server.endswith('.'):
+                        print(f"⚠️ Пропускаем невалидную ссылку: {server}")
+                        continue
+                valid_proxies.append(p)
+            
+            print(f"📦 После фильтрации: {len(valid_proxies)} прокси")
+            return valid_proxies
     except:
         pass
     
@@ -207,6 +223,15 @@ def parse_proxies_from_file():
         
         for i, line in enumerate(lines):
             if line.startswith('tg://proxy'):
+                # Проверяем на невалидные ссылки
+                server_match = re.search(r'server=([^&]+)', line)
+                if server_match:
+                    server = server_match.group(1)
+                    # Пропускаем ссылки с пробелами или точкой в конце
+                    if ' ' in server or server.endswith('.'):
+                        print(f"⚠️ Пропускаем невалидную ссылку: {line[:80]}...")
+                        continue
+                
                 proxy = {'link': line}
                 if i > 0 and '🇷🇺' in lines[i-1]:
                     proxy['flag'] = '🇷🇺'
