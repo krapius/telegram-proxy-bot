@@ -206,6 +206,7 @@ def test_proxy_stability(server, port, level='strict'):
     pings = []
     losses = 0
     
+    # TCP-тест
     for i in range(config['samples']):
         try:
             start = time.time()
@@ -218,7 +219,7 @@ def test_proxy_stability(server, port, level='strict'):
                 pings.append(response_time)
             else:
                 losses += 1
-        except Exception as e:
+        except:
             losses += 1
         if i < config['samples'] - 1:
             time.sleep(0.3)
@@ -235,7 +236,57 @@ def test_proxy_stability(server, port, level='strict'):
     else:
         jitter = 0
     
-    meets_criteria = (avg_ping <= config['max_ping'] and jitter <= config['max_jitter'] and loss_percent <= config['max_loss'])
+    # ===== НОВАЯ ПРОВЕРКА: ЗАГРУЗКА НЕБОЛЬШОГО ФАЙЛА =====
+    download_speed = None
+    download_success = False
+    
+    if level == 'strict':
+        print(f"\n      📥 Тест загрузки (скачивание тестового файла):")
+        
+        # Небольшой тестовый файл (1 МБ)
+        test_url = f"http://{server}:{port}/speedtest/1mb.bin"
+        
+        try:
+            import urllib.request
+            import ssl
+            
+            ctx = ssl.create_default_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+            
+            start_time = time.time()
+            req = urllib.request.Request(test_url, method='GET')
+            
+            # Скачиваем первые 100 КБ для проверки скорости
+            with urllib.request.urlopen(req, timeout=5, context=ctx) as response:
+                data = response.read(102400)  # 100 КБ
+                elapsed = time.time() - start_time
+                
+                if len(data) > 0:
+                    download_speed = (len(data) / 1024) / elapsed  # КБ/сек
+                    download_success = True
+                    print(f"         ✅ Скорость загрузки: {download_speed:.0f} КБ/сек")
+                else:
+                    print(f"         ⚠️ Пустой ответ")
+                    
+        except Exception as e:
+            print(f"         ❌ Ошибка загрузки: {str(e)[:60]}")
+    
+    meets_criteria = (
+        avg_ping <= config['max_ping'] and 
+        jitter <= config['max_jitter'] and 
+        loss_percent <= config['max_loss']
+    )
+    
+    # Для strict уровня добавляем условие скорости загрузки (минимально 50 КБ/сек)
+    if level == 'strict' and download_success:
+        if download_speed < 50:
+            meets_criteria = False
+            print(f"      ⚠️ Слишком низкая скорость: {download_speed:.0f} КБ/сек (мин. 50)")
+    
+    status = "✅ ПРОШЕЛ" if meets_criteria else "❌ НЕ ПРОШЕЛ"
+    print(f"      📈 Результат: п={avg_ping:.0f}мс дж={jitter:.0f}мс пот={loss_percent:.0f}% {status}")
+    
     return avg_ping, jitter, loss_percent, meets_criteria
 
 def advanced_final_check(proxies, progress_callback=None):
