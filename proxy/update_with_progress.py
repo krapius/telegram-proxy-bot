@@ -147,46 +147,46 @@ def create_proxy_buttons(proxies):
     keyboard.append([{"text": "🔄 Обновить список прокси", "callback_data": "refresh"}])
     return {"inline_keyboard": keyboard}
 
-# def send_final_result(proxies):
-#     """Отправляет финальный результат с пингом и скоростью"""
-#     now = time.strftime("%d.%m %H:%M")
-#     text = f"<b>🔥 Лучшие прокси SAMOLET на {now}</b>\n\n"
+def send_final_result(proxies):
+    """Отправляет финальный результат с пингом и скоростью"""
+    now = time.strftime("%d.%m %H:%M")
+    text = f"<b>🔥 Лучшие прокси SAMOLET на {now}</b>\n\n"
     
-#     if not proxies:
-#         text += "❌ Нет прокси"
-#         keyboard = {"inline_keyboard": [[{"text": "🔄 Обновить список", "callback_data": "refresh"}]]}
-#         send_message(text, reply_markup=keyboard)
-#         return
+    if not proxies:
+        text += "❌ Нет прокси"
+        keyboard = {"inline_keyboard": [[{"text": "🔄 Обновить список", "callback_data": "refresh"}]]}
+        send_message(text, reply_markup=keyboard)
+        return
     
-#     for i, p in enumerate(proxies[:6], 1):
-#         flag = p.get('flag', '🇪🇺')
-#         stats = p.get('strict_stats', {})
-#         ping = stats.get('ping', p.get('ping', 0))
-#         speed = p.get('download_speed', 0)
+    for i, p in enumerate(proxies[:6], 1):
+        flag = p.get('flag', '🇪🇺')
+        stats = p.get('strict_stats', {})
+        ping = stats.get('ping', p.get('ping', 0))
+        speed = p.get('download_speed', 0)
         
-#         # Определяем качество по пингу
-#         if ping and ping < 100:
-#             quality = "🚀"
-#         elif ping and ping < 200:
-#             quality = "✅"
-#         elif ping:
-#             quality = "⚠️"
-#         else:
-#             quality = "❓"
+        # Определяем качество по пингу
+        if ping and ping < 100:
+            quality = "🚀"
+        elif ping and ping < 200:
+            quality = "✅"
+        elif ping:
+            quality = "⚠️"
+        else:
+            quality = "❓"
         
-#         if ping and speed:
-#             text += f"{flag} {quality} <b>Прокси #{i}</b> — {ping:.0f}мс | {speed:.0f} КБ/с\n"
-#         elif ping:
-#             text += f"{flag} {quality} <b>Прокси #{i}</b> — {ping:.0f}мс\n"
-#         else:
-#             text += f"{flag} {quality} <b>Прокси #{i}</b>\n"
-#         text += f"<code>{p['link']}</code>\n\n"
+        if ping and speed:
+            text += f"{flag} {quality} <b>Прокси #{i}</b> — {ping:.0f}мс | {speed:.0f} КБ/с\n"
+        elif ping:
+            text += f"{flag} {quality} <b>Прокси #{i}</b> — {ping:.0f}мс\n"
+        else:
+            text += f"{flag} {quality} <b>Прокси #{i}</b>\n"
+        text += f"<code>{p['link']}</code>\n\n"
     
-#     text += f"\n🔄 <i>Обновляется автоматически каждые 6 часов</i>"
-#     text += f"\n📊 <i>🚀 &lt;100мс — отлично | ✅ 100-200мс — хорошо | ⚠️ &gt;200мс — медленно</i>"
+    text += f"\n🔄 <i>Обновляется автоматически каждые 6 часов</i>"
+    text += f"\n📊 <i>🚀 &lt;100мс — отлично | ✅ 100-200мс — хорошо | ⚠️ &gt;200мс — медленно</i>"
     
-#     keyboard = create_proxy_buttons(proxies[:10])
-#     send_message(text, reply_markup=keyboard)
+    keyboard = create_proxy_buttons(proxies[:10])
+    send_message(text, reply_markup=keyboard)
 
 
 def parse_proxies_from_file():
@@ -343,6 +343,28 @@ def main():
     process.wait(timeout=10)
     print("✅ test_proxies.py завершён")
     
+    # Отладка: проверяем, какие файлы создались
+    print("\n🔍 ОТЛАДКА: Проверка созданных файлов:")
+    print(f"   Текущая директория: {os.getcwd()}")
+    print(f"   best_proxies.txt exists: {os.path.exists('best_proxies.txt')}")
+    print(f"   best_proxies.json exists: {os.path.exists('best_proxies.json')}")
+    
+    # Показываем содержимое папки verified
+    if os.path.exists('verified'):
+        print(f"\n📁 Файлы в verified/:")
+        for f in os.listdir('verified'):
+            if f.endswith('.txt') or f.endswith('.json'):
+                print(f"   - {f}")
+    else:
+        print(f"\n⚠️ Папка verified не найдена!")
+    
+    # Показываем все JSON файлы в корне
+    print(f"\n📁 JSON файлы в корне:")
+    for f in os.listdir('.'):
+        if f.endswith('.json'):
+            print(f"   - {f}")
+    print("")
+    
     # Парсим результат
     proxies = parse_proxies_from_file()
     total_proxies_found = len(proxies)
@@ -377,6 +399,28 @@ def main():
         )
         if response.status_code == 200:
             print(f"✅ Отправлено {len(proxies)} прокси в Worker")
+            
+            # Просим Worker отправить сообщение в канал (имитируем webhook с командой /start)
+            print(f"📨 Запрашиваем отправку сообщения в канал...")
+            try:
+                # Имитируем сообщение от пользователя с командой /start
+                fake_update = {
+                    "message": {
+                        "chat": {"id": int(CHAT_ID)},
+                        "text": "/start"
+                    }
+                }
+                channel_response = httpx.post(
+                    f"{WORKER_URL}",
+                    json=fake_update,
+                    timeout=30
+                )
+                if channel_response.status_code == 200:
+                    print(f"✅ Сообщение отправлено в канал")
+                else:
+                    print(f"⚠️ Ошибка отправки сообщения: {channel_response.status_code}")
+            except Exception as e:
+                print(f"⚠️ Не удалось отправить сообщение: {e}")
     except Exception as e:
         print(f"❌ Ошибка отправки: {e}")
     
@@ -385,7 +429,7 @@ def main():
     # Удаляем сообщение с прогрессом
     delete_message(progress_message_id)
     
-    # Отправляем финальный результат
+    # Отправляем финальный результат (закомментировано, используем Worker)
     # send_final_result(proxies)
     print("🎉 Обновление завершено!")
 
