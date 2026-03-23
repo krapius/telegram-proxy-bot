@@ -32,7 +32,7 @@ GEOIP_DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "GeoLit
 STABILITY_LEVELS = {
     'quick': {
         'samples': 2,
-        'max_jitter': 300,
+        'max_jitter': 150,
         'max_loss': 30,
         'max_ping': 250,
         'description': 'Быстрый отбор'
