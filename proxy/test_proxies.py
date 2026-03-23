@@ -10,6 +10,7 @@ import statistics
 import json
 import urllib.request
 import ssl
+import urllib.parse
 
 # ===== ОПТИМИЗИРОВАННЫЕ НАСТРОЙКИ =====
 PING_TIMEOUT = 10
@@ -33,6 +34,45 @@ USE_TCP_PING = True
 
 # ===== ТОКЕН ДЛЯ TELEGRAM =====
 TOKEN = "8664454935:AAFPk1ehMIJB1r9MrDRTrb9JDtpHYjg1Vjc"
+
+
+def clean_server(server):
+    """Очищает имя сервера от недопустимых символов"""
+    if not server:
+        return server
+    # Удаляем точку в конце
+    server = server.rstrip('.')
+    # Удаляем пробелы
+    server = server.strip()
+    # Удаляем http:// или https:// если есть
+    server = re.sub(r'^https?://', '', server)
+    return server
+
+def clean_proxy_link_full(link):
+    """Полная очистка прокси-ссылки: сервер и secret"""
+    if not link.startswith('tg://proxy?'):
+        return link
+    
+    # Очищаем server
+    server_match = re.search(r'server=([^&]+)', link)
+    if server_match:
+        server_raw = server_match.group(1)
+        server_clean = clean_server(server_raw)
+        if server_clean != server_raw:
+            link = link.replace(f'server={server_raw}', f'server={server_clean}')
+    
+    # Раскодируем secret (URL-кодирование)
+    secret_match = re.search(r'secret=([^&]+)', link)
+    if secret_match:
+        secret_raw = secret_match.group(1)
+        try:
+            secret_decoded = urllib.parse.unquote(secret_raw)
+            if secret_decoded != secret_raw:
+                link = link.replace(f'secret={secret_raw}', f'secret={secret_decoded}')
+        except:
+            pass
+    
+    return link
 
 # ===== ФУНКЦИИ УПРАВЛЕНИЯ VPN =====
 def is_vpn_connected():
@@ -330,6 +370,7 @@ def clean_proxy_link(link):
     link = link.strip()
     return link
 
+
 def extract_proxies_from_file(file_path, proxy_type):
     proxies = []
     
@@ -367,6 +408,9 @@ def extract_proxies_from_file(file_path, proxy_type):
         clean_link = clean_proxy_link(line)
         if not validate_proxy_link(clean_link):
             continue
+        
+        # ПОЛНАЯ ОЧИСТКА ССЫЛКИ (сервер + secret)
+        clean_link = clean_proxy_link_full(clean_link)
         
         proxy_info['link'] = clean_link
         proxy_info['type'] = real_type
@@ -509,6 +553,7 @@ def advanced_final_check(proxies, progress_callback=None):
     print(f"\n🏆 ИТОГО: {len(final_proxies)} прокси (RU: {min(len(ru_proxies), 5)})")
     return final_proxies[:10]
 
+
 def save_proxies_to_file(proxies, filename="best_proxies.txt"):
     seen_servers = set()
     unique_proxies = []
@@ -516,6 +561,9 @@ def save_proxies_to_file(proxies, filename="best_proxies.txt"):
     for p in proxies:
         if p['server'] not in seen_servers:
             seen_servers.add(p['server'])
+            # Дополнительная очистка ссылки перед сохранением
+            if 'link' in p:
+                p['link'] = clean_proxy_link_full(p['link'])
             unique_proxies.append(p)
     
     unique_proxies.sort(key=lambda x: x.get('quality_score', 0), reverse=True)
@@ -557,6 +605,7 @@ def save_proxies_to_file(proxies, filename="best_proxies.txt"):
                 f.write(f"# {i}. {p['type']} {quality} {p['server']} — {stats} | {mask}\n")
             else:
                 f.write(f"# {i}. {p['type']} {quality} {p['server']} — {stats}\n")
+            # Ссылка уже очищена
             f.write(f"{p['link']}\n\n")
     
     # Сохраняем также в JSON с полными данными
