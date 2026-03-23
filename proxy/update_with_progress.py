@@ -386,7 +386,7 @@ def main():
     delete_message(progress_message_id)
     
     # Отправляем финальный результат
-    send_final_result(proxies)
+    # send_final_result(proxies)
     print("🎉 Обновление завершено!")
 
 if __name__ == "__main__":
