@@ -6,14 +6,16 @@ on:
   workflow_dispatch:
     inputs:
       chat_id:
-        description: 'Chat ID для отправки результата'
+        description: 'Chat ID'
         required: false
         default: '305673438'
+        type: string
 
 env:
   PYTHON_VERSION: '3.11'
   WORKER_URL: 'https://telegram-proxy-bot.krichencat.workers.dev'
   BOT_TOKEN: '8664454935:AAFPk1ehMIJB1r9MrDRTrb9JDtpHYjg1Vjc'
+  PYTHONUNBUFFERED: "1"   # <-- ДОБАВЛЯЕМ ЭТУ СТРОКУ
 
 jobs:
   update:
@@ -39,4 +41,4 @@ jobs:
       - name: Run update with progress
         run: |
           cd proxy
-          python update_with_progress.py ${{ github.event.inputs.chat_id }}
+          python -u update_with_progress.py ${{ github.event.inputs.chat_id }}   # <-- ДОБАВЛЯЕМ ФЛАГ -u
