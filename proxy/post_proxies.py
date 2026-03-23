@@ -32,16 +32,16 @@ GEOIP_DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "GeoLit
 STABILITY_LEVELS = {
     'quick': {
         'samples': 2,
-        'max_jitter': 150,
+        'max_jitter': 200,
         'max_loss': 30,
-        'max_ping': 250,
+        'max_ping': 300,
         'description': 'Быстрый отбор'
     },
     'strict': {
         'samples': 5,
-        'max_jitter': 80,      # вернул к 80 (EU прокси могут иметь джиттер)
-        'max_loss': 10,        # вернул к 10
-        'max_ping': 250,       # вернул к 300 (EU прокси могут иметь пинг до 300)
+        'max_jitter': 100,
+        'max_loss': 15,
+        'max_ping': 350,
         'description': 'Жесткий отбор'
     }
 }
@@ -239,6 +239,7 @@ def test_proxy_stability(server, port, level='strict'):
         jitter = 0
     
     print(f"   📊 Тест стабильности ({config['description']}) для {server}:{port}")
+    print(f"      TCP пинг: {avg_ping:.0f}мс, потери: {loss_percent:.0f}%, джиттер: {jitter:.0f}мс")
     
     # ===== ПРОВЕРКА HTTP СТАТУСА (блокировка Telegram) =====
     http_blocked = False
@@ -261,24 +262,23 @@ def test_proxy_stability(server, port, level='strict'):
     download_success = False
     
     if level == 'strict':
-        print(f"\n      📥 Тест скорости загрузки:")
+        print(f"\n      📥 Тест скорости загрузки (100 КБ):")
         
         # Используем реальные тестовые файлы из интернета (через прокси)
         test_urls = [
-            f"http://speedtest.tele2.net/1MB.zip",
-            f"http://ipv4.download.thinkbroadband.com/1MB.zip",
+            f"http://speedtest.tele2.net/100KB.zip",
+            f"http://ipv4.download.thinkbroadband.com/100KB.zip",
             f"http://httpbin.org/bytes/102400"
         ]
         
         for test_url in test_urls:
             try:
-                # Создаём прокси-обработчик
+                # Создаём отдельный opener для каждого прокси
                 proxy_handler = urllib.request.ProxyHandler({
                     'http': f'http://{server}:{port}',
                     'https': f'http://{server}:{port}'
                 })
                 opener = urllib.request.build_opener(proxy_handler)
-                urllib.request.install_opener(opener)
                 
                 ctx = ssl.create_default_context()
                 ctx.check_hostname = False
@@ -287,22 +287,22 @@ def test_proxy_stability(server, port, level='strict'):
                 start_time = time.time()
                 req = urllib.request.Request(test_url, method='GET')
                 
-                with urllib.request.urlopen(req, timeout=8, context=ctx) as response:
+                # Используем отдельный opener
+                with opener.open(req, timeout=8) as response:
                     data = response.read(102400)  # 100 КБ
                     elapsed = time.time() - start_time
                     
                     if len(data) > 0 and elapsed > 0:
                         download_speed = (len(data) / 1024) / elapsed  # КБ/сек
                         download_success = True
-                        print(f"         ✅ Скорость: {download_speed:.0f} КБ/сек")
+                        print(f"         ✅ Скорость: {download_speed:.0f} КБ/сек (за {elapsed:.1f}с)")
                         break
             except Exception as e:
-                print(f"         ⚠️ Попытка через {test_url}: {str(e)[:40]}")
+                print(f"         ⚠️ {test_url.split('/')[-1]}: {str(e)[:50]}")
                 continue
         
         if not download_success:
-            print(f"         ⚠️ Тест скорости не удался (использую только TCP)")
-            # Если тест скорости не удался, используем TCP пинг как основной показатель
+            print(f"         ⚠️ Тест скорости не удался, используем только TCP")
             download_success = True
             download_speed = 100  # Значение по умолчанию для прохождения
     
@@ -313,19 +313,17 @@ def test_proxy_stability(server, port, level='strict'):
     )
     
     # Для strict уровня учитываем скорость (если тест прошёл)
-    if level == 'strict' and download_success:
+    if level == 'strict' and download_success and download_speed:
         if download_speed < 50:
             meets_criteria = False
             print(f"      ⚠️ Слишком низкая скорость: {download_speed:.0f} КБ/сек (мин. 50)")
-    else:
-        # Если тест скорости не удался, используем только TCP критерии
-        pass
+        else:
+            print(f"      ✅ Скорость OK: {download_speed:.0f} КБ/сек")
     
     status = "✅ ПРОШЕЛ" if meets_criteria else "❌ НЕ ПРОШЕЛ"
-    print(f"      📈 Результат: п={avg_ping:.0f}мс дж={jitter:.0f}мс пот={loss_percent:.0f}% {status}")
+    print(f"      📈 РЕЗУЛЬТАТ: пинг={avg_ping:.0f}мс, джиттер={jitter:.0f}мс, потери={loss_percent:.0f}%, скорость={download_speed if download_speed else 0:.0f} КБ/с -> {status}")
     
     return avg_ping, jitter, loss_percent, meets_criteria, download_speed
-
 
 def advanced_final_check(proxies, progress_callback=None):
     """Оптимизированная проверка стабильности с callback для прогресса"""
@@ -793,6 +791,9 @@ class ProgressBot:
             self.current_message_id = None
             self.current_chat_id = None
 
+
+
+
     async def send_proxy_list_result(self, chat_id, message_id, proxies):
         now = datetime.now().strftime("%d.%m %H:%M")
         text = f"<b>🔥 Лучшие прокси SAMOLET на {now}</b>\n\n"
@@ -821,6 +822,7 @@ class ProgressBot:
             ping = stats.get('ping', p.get('ping', 0))
             speed = p.get('download_speed', 0)
             
+            # Определяем качество по пингу
             if ping and ping < 100:
                 quality = "🚀"
             elif ping and ping < 200:
@@ -839,7 +841,7 @@ class ProgressBot:
             text += f"<code>{p['link']}</code>\n\n"
         
         text += f"\n🔄 <i>Обновляется автоматически каждые 6 часов</i>"
-        text += f"\n📊 <i>🚀 <100мс — отлично | ✅ 100-200мс — хорошо | ⚠️ >200мс — медленно</i>"
+        text += f"\n📊 <i>🚀 &lt;100мс — отлично | ✅ 100-200мс — хорошо | ⚠️ &gt;200мс — медленно</i>"
         
         keyboard = create_proxy_buttons(proxies[:10])
         try:
