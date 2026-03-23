@@ -7,21 +7,22 @@ from datetime import datetime
 import time
 import socket
 import statistics
+import json
 
 # ===== ОПТИМИЗИРОВАННЫЕ НАСТРОЙКИ =====
-PING_TIMEOUT = 10          # Уменьшили с 15 до 10 секунд
-PING_COUNT = 2             # Оставляем 2 попытки
-PING_INTERVAL = 1          # Секунда между попытками
-MAX_PING = 800             # Принимаем пинг до 800 мс
-MIN_PROXIES = 3            # Минимум прокси для выдачи
-CHECK_LIMIT = 50           # Уменьшили с 100 до 50 прокси
-ACCEPT_PACKET_LOSS = True  # Принимаем даже с потерями
-SHOW_PROGRESS = True       # Показываем прогресс
+PING_TIMEOUT = 10
+PING_COUNT = 2
+PING_INTERVAL = 1
+MAX_PING = 800
+MIN_PROXIES = 3
+CHECK_LIMIT = 50
+ACCEPT_PACKET_LOSS = True
+SHOW_PROGRESS = True
 # ================================
 
 # ===== ПАРАМЕТРЫ СТАБИЛЬНОСТИ =====
 STABILITY_TEST_ENABLED = True
-STABILITY_SAMPLES = 2      # Уменьшили с 3 до 2 замеров
+STABILITY_SAMPLES = 2
 STABILITY_INTERVAL = 0.3
 MAX_JITTER = 250
 MAX_PACKET_LOSS = 30
@@ -299,7 +300,6 @@ def extract_proxies_from_file(file_path, proxy_type):
             
         if jitter > MAX_JITTER:
             if SHOW_PROGRESS:
-                time_str = ", ".join([f"{t:.0f}" for t in times])
                 print(f"      ⚠️ Джиттер {jitter:.0f}мс > {MAX_JITTER}мс")
             unstable += 1
             continue
@@ -359,6 +359,7 @@ def save_proxies_to_file(proxies, filename="best_proxies.txt"):
     
     final_proxies = final_proxies[:10]
     
+    # Сохраняем в TXT
     with open(filename, 'w') as f:
         f.write(f"# Лучшие прокси от {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
         f.write(f"# Всего найдено: {len(unique_proxies)} (RU: {len(ru_proxies)}, EU: {len(eu_proxies)})\n")
@@ -379,6 +380,11 @@ def save_proxies_to_file(proxies, filename="best_proxies.txt"):
             else:
                 f.write(f"# {i}. {p['type']} {quality} {p['server']} — {stats}\n")
             f.write(f"{p['link']}\n\n")
+    
+    # Сохраняем также в JSON с полными данными
+    with open('best_proxies.json', 'w', encoding='utf-8') as f:
+        json.dump(final_proxies, f, ensure_ascii=False, indent=2)
+    print(f"💾 Сохранено в best_proxies.json")
     
     return final_proxies
 

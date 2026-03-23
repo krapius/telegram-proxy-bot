@@ -9,6 +9,7 @@ import os
 import httpx
 import time
 import re
+import json
 
 BOT_TOKEN = os.environ.get('BOT_TOKEN', '8664454935:AAFPk1ehMIJB1r9MrDRTrb9JDtpHYjg1Vjc')
 WORKER_URL = os.environ.get('WORKER_URL', 'https://telegram-proxy-bot.krichencat.workers.dev')
@@ -147,37 +148,65 @@ def create_proxy_buttons(proxies):
     return {"inline_keyboard": keyboard}
 
 def send_final_result(proxies):
-    """Отправляет финальный результат в указанный чат"""
+    """Отправляет финальный результат с пингом и скоростью"""
     now = time.strftime("%d.%m %H:%M")
-    text = f"<b>🔥 Лучшие прокси SAMOLET на {now}</b>"
+    text = f"<b>🔥 Лучшие прокси SAMOLET на {now}</b>\n\n"
     
     if not proxies:
-        text += "\n❌ Нет прокси"
+        text += "❌ Нет прокси"
         keyboard = {"inline_keyboard": [[{"text": "🔄 Обновить список", "callback_data": "refresh"}]]}
-    else:
-        keyboard = create_proxy_buttons(proxies)
+        send_message(text, reply_markup=keyboard)
+        return
     
-    # Отправляем только в тот чат, откуда пришла команда
+    for i, p in enumerate(proxies[:6], 1):
+        flag = p.get('flag', '🇪🇺')
+        stats = p.get('strict_stats', {})
+        ping = stats.get('ping', p.get('ping', 0))
+        speed = p.get('download_speed', 0)
+        
+        # Определяем качество по пингу
+        if ping and ping < 100:
+            quality = "🚀"
+        elif ping and ping < 200:
+            quality = "✅"
+        elif ping:
+            quality = "⚠️"
+        else:
+            quality = "❓"
+        
+        if ping and speed:
+            text += f"{flag} {quality} <b>Прокси #{i}</b> — {ping:.0f}мс | {speed:.0f} КБ/с\n"
+        elif ping:
+            text += f"{flag} {quality} <b>Прокси #{i}</b> — {ping:.0f}мс\n"
+        else:
+            text += f"{flag} {quality} <b>Прокси #{i}</b>\n"
+        text += f"<code>{p['link']}</code>\n\n"
+    
+    text += f"\n🔄 <i>Обновляется автоматически каждые 6 часов</i>"
+    text += f"\n📊 <i>🚀 &lt;100мс — отлично | ✅ 100-200мс — хорошо | ⚠️ &gt;200мс — медленно</i>"
+    
+    keyboard = create_proxy_buttons(proxies[:10])
     send_message(text, reply_markup=keyboard)
 
 def parse_proxies_from_file():
-    """Парсит best_proxies.txt в список прокси, фильтруя невалидные"""
+    """Парсит best_proxies.json в список прокси с пингом и скоростью"""
     proxies = []
+    try:
+        # Сначала пробуем читать JSON
+        with open('best_proxies.json', 'r', encoding='utf-8') as f:
+            proxies = json.load(f)
+            print(f"📦 Загружено {len(proxies)} прокси из JSON")
+            return proxies
+    except:
+        pass
+    
+    # Если JSON нет, читаем txt (старый формат)
     try:
         with open('best_proxies.txt', 'r', encoding='utf-8') as f:
             lines = f.read().split('\n')
         
         for i, line in enumerate(lines):
             if line.startswith('tg://proxy'):
-                # Проверяем, что сервер не содержит пробелов и не заканчивается точкой
-                server_match = re.search(r'server=([^&]+)', line)
-                if server_match:
-                    server = server_match.group(1)
-                    # Пропускаем ссылки с пробелами или точкой в конце
-                    if ' ' in server or server.endswith('.'):
-                        print(f"⚠️ Пропускаем невалидную ссылку: {line[:80]}...")
-                        continue
-                
                 proxy = {'link': line}
                 if i > 0 and '🇷🇺' in lines[i-1]:
                     proxy['flag'] = '🇷🇺'
