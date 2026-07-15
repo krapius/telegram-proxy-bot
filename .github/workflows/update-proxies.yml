@@ -46,5 +46,5 @@ jobs:
       - name: Show JSON content
         run: |
           cd proxy
-          echo "📄 Содержимое best_proxies.json:"
+          echo "📄 Содеhржимое best_proxies.json:"
           cat best_proxies.json | python -m json.tool
